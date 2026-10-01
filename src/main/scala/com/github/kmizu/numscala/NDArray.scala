@@ -412,6 +412,8 @@ final class NDArray[T] private[numscala] (
   def **[U](o: NDArray[U])(using p: NumPromote[T, U]): NDArray[p.Out] = Ops.arith(this, o, p.dtype, Arith.Pow)
   def %(o: NDArray[T])(using d: RealDType[T]): NDArray[T] = Ops.binary(this, o, d)(d.mod)
   def floorDiv(o: NDArray[T])(using d: RealDType[T]): NDArray[T] = Ops.binary(this, o, d)(d.floorDiv)
+  /** NumPy's `a // b` (floor division); `//` alone would start a comment, so write `` a `//` b ``. */
+  def `//`(o: NDArray[T])(using d: RealDType[T]): NDArray[T] = floorDiv(o)
 
   def +(s: T)(using d: NumDType[T]): NDArray[T] = Ops.arith(this, NDArray.scalar(s), d, Arith.Add)
   def -(s: T)(using d: NumDType[T]): NDArray[T] = Ops.arith(this, NDArray.scalar(s), d, Arith.Sub)
@@ -423,6 +425,8 @@ final class NDArray[T] private[numscala] (
   def **(s: T)(using d: NumDType[T]): NDArray[T] = Ops.arith(this, NDArray.scalar(s), d, Arith.Pow)
   def %(s: T)(using d: RealDType[T]): NDArray[T] = map(x => d.mod(x, s))
   def floorDiv(s: T)(using d: RealDType[T]): NDArray[T] = map(x => d.floorDiv(x, s))
+  /** NumPy's `a // s` with a scalar: `` a `//` 2 ``. */
+  def `//`(s: T)(using d: RealDType[T]): NDArray[T] = floorDiv(s)
 
   def unary_-(using d: NumDType[T]): NDArray[T] = map(d.negate)
   def unary_+ : NDArray[T] = copy()
@@ -436,6 +440,9 @@ final class NDArray[T] private[numscala] (
   def -=(s: T)(using d: NumDType[T]): Unit = mapInPlace(d.minus(_, s))
   def *=(s: T)(using d: NumDType[T]): Unit = mapInPlace(d.times(_, s))
   def /=(s: T)(using d: InexactDType[T]): Unit = mapInPlace(d.div(_, s))
+  /** NumPy's `a //= b` (in-place floor division): `` a `//=` b ``. */
+  def `//=`(o: NDArray[T])(using d: RealDType[T]): Unit = Ops.inPlace(this, o)(d.floorDiv)
+  def `//=`(s: T)(using d: RealDType[T]): Unit = mapInPlace(d.floorDiv(_, s))
 
   // ------------------------------------------------------------------ comparison operators
 

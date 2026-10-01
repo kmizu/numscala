@@ -49,6 +49,8 @@ extension (s: Double)
   def *[U](a: NDArray[U])(using d: InexactDType[U]): NDArray[U] = a.map(x => d.times(d.fromDouble(s), x))
   def /[U](a: NDArray[U])(using d: InexactDType[U]): NDArray[U] = a.map(x => d.div(d.fromDouble(s), x))
   def **[U](a: NDArray[U])(using d: InexactDType[U]): NDArray[U] = a.map(x => d.power(d.fromDouble(s), x))
+  /** `` 7.0 `//` a `` (NumPy's `7.0 // a`). */
+  def `//`[U](a: NDArray[U])(using d: FloatDType[U]): NDArray[U] = a.map(x => d.floorDiv(d.fromDouble(s), x))
 
 extension (s: Int)
   def j: Complex = Complex(0.0, s.toDouble)
@@ -59,6 +61,8 @@ extension (s: Int)
     val od = t.dtype
     a.map(x => od.div(od.fromLong(s.toLong), od.castFrom(a.dtype, x)))(using od)
   def **[U](a: NDArray[U])(using d: NumDType[U]): NDArray[U] = a.map(x => d.power(d.fromInt(s), x))
+  /** `` 7 `//` a `` (NumPy's `7 // a`). */
+  def `//`[U](a: NDArray[U])(using d: RealDType[U]): NDArray[U] = a.map(x => d.floorDiv(d.fromLong(s.toLong), x))
 
 extension (s: Complex)
   def +(a: NDArray[Complex]): NDArray[Complex] = a.map(x => s + x)

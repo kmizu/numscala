@@ -59,7 +59,7 @@ b(b > 9.0) = -1.0        // masked assignment               b[b > 9] = -1
 | `a[..., None]` | `a(---, None)` |
 | `a == b`, `a != b` | `a === b`, `a =!= b` |
 | `a @ b` | `a @@ b` |
-| `a // b` | `a.floorDiv(b)` / `np.floor_divide(a, b)` |
+| `a // b`, `a //= b` | ``a `//` b``, ``a `//=` b`` (or `np.floor_divide(a, b)`) |
 | `a.sum()`, `a.sum(axis=0)` | `a.sum()`, `a.sum(0)` / `np.sum(a, axis = 0)` |
 | `a.T`, `a.reshape(-1, 2)` | `a.T`, `a.reshape(-1, 2)` |
 | `print(a)`, `repr(a)` | `println(a)`, `a.repr` |
@@ -149,7 +149,8 @@ Scala is statically typed and has no `__getitem__` syntax, so a few things look 
   like `"1:-1"`, `Range`s, `None`, `---`, index arrays, masks) returns an array. A row of a
   2-D array is `a(i, ::)`, not `a(i)`.
 * **Operators.** Elementwise equality is `===` / `=!=`; matrix product is `@@`;
-  floor division is `floorDiv`.
+  floor division is ``a `//` b`` — backquoted, because a bare `//` starts a comment in Scala.
+  It has the same precedence as `*` and `/`, like NumPy's `//`.
 * **Scalars promote like arrays.** `float32Array + 2.0` is float64 (NumPy treats Python
   scalars as "weak"); use `np.array(2.0f)` to stay in float32.
 * **Index results are `NDArray[Int]`** (NumPy: int64), since JVM arrays are Int-indexed.

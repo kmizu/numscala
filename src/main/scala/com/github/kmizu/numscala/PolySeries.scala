@@ -81,6 +81,9 @@ abstract class PolySeries[S <: PolySeries[S]] protected (
   def floorDiv(o: S): S = divmod(o)._1
   /** Floor division by a scalar. */
   def floorDiv(s: Double): S = make(basis.div(coefArr, Array(s))._1)
+  /** Python's `p // q`: `` p `//` q ``. */
+  def `//`(o: S): S = floorDiv(o)
+  def `//`(s: Double): S = floorDiv(s)
   /** Remainder (NumPy `%`). */
   def %(o: S): S = divmod(o)._2
   /** Remainder of division by a scalar. */

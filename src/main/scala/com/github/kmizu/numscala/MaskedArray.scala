@@ -291,6 +291,8 @@ final class MaskedArray[T] private[numscala] (
   def **[U](o: MaskedArray[U])(using p: NumPromote[T, U]): MaskedArray[p.Out] = MaskedArray.power(this, o, p.dtype)
   def %(o: MaskedArray[T])(using d: RealDType[T]): MaskedArray[T] = MaskedArray.domainedF(this, o, d)(d.mod)
   def floorDiv(o: MaskedArray[T])(using d: RealDType[T]): MaskedArray[T] = MaskedArray.domainedF(this, o, d)(d.floorDiv)
+  /** NumPy's `//` (floor division): `` a `//` b ``. */
+  def `//`(o: MaskedArray[T])(using d: RealDType[T]): MaskedArray[T] = floorDiv(o)
 
   def +[U](o: NDArray[U])(using p: NumPromote[T, U]): MaskedArray[p.Out] = arith(this, wrap(o), p.dtype, Arith.Add)
   def -[U](o: NDArray[U])(using p: NumPromote[T, U]): MaskedArray[p.Out] = arith(this, wrap(o), p.dtype, Arith.Sub)
@@ -299,6 +301,8 @@ final class MaskedArray[T] private[numscala] (
   def **[U](o: NDArray[U])(using p: NumPromote[T, U]): MaskedArray[p.Out] = MaskedArray.power(this, wrap(o), p.dtype)
   def %(o: NDArray[T])(using d: RealDType[T]): MaskedArray[T] = MaskedArray.domainedF(this, wrap(o), d)(d.mod)
   def floorDiv(o: NDArray[T])(using d: RealDType[T]): MaskedArray[T] = MaskedArray.domainedF(this, wrap(o), d)(d.floorDiv)
+  /** NumPy's `//` (floor division): `` a `//` b ``. */
+  def `//`(o: NDArray[T])(using d: RealDType[T]): MaskedArray[T] = floorDiv(o)
 
   def +(s: T)(using d: NumDType[T]): MaskedArray[T] = arith(this, MaskedArray.scalarOf(s), d, Arith.Add)
   def -(s: T)(using d: NumDType[T]): MaskedArray[T] = arith(this, MaskedArray.scalarOf(s), d, Arith.Sub)
@@ -307,6 +311,8 @@ final class MaskedArray[T] private[numscala] (
   def **(s: T)(using d: NumDType[T]): MaskedArray[T] = MaskedArray.power(this, MaskedArray.scalarOf(s), d)
   def %(s: T)(using d: RealDType[T]): MaskedArray[T] = MaskedArray.domainedF(this, MaskedArray.scalarOf(s), d)(d.mod)
   def floorDiv(s: T)(using d: RealDType[T]): MaskedArray[T] = MaskedArray.domainedF(this, MaskedArray.scalarOf(s), d)(d.floorDiv)
+  /** NumPy's `//` (floor division): `` a `//` b ``. */
+  def `//`(s: T)(using d: RealDType[T]): MaskedArray[T] = floorDiv(s)
 
   def unary_-(using d: NumDType[T]): MaskedArray[T] = MaskedArray.unary(this, d, d.negate, None)
   def unary_+ : MaskedArray[T] = copy()
