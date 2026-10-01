@@ -15,17 +15,19 @@ final case class PrintOptions(
 
 /** Number and array formatting that reproduces NumPy's `str`/`repr` output. */
 object Format:
-  @volatile private var opts: PrintOptions = PrintOptions()
+  @volatile private var globalOpts: PrintOptions = PrintOptions()
+  private val localOpts = new scala.util.DynamicVariable[Option[PrintOptions]](None)
+  private def opts: PrintOptions = localOpts.value.getOrElse(globalOpts)
 
   def printOptions: PrintOptions = opts
-  def setPrintOptions(o: PrintOptions): Unit = opts = o
+  /** Sets the process-wide print options (`np.set_printoptions`). */
+  def setPrintOptions(o: PrintOptions): Unit = globalOpts = o
 
-  /** Runs `body` with temporary print options (`np.printoptions` context manager). */
+  /** Runs `body` with temporary print options (`np.printoptions` context manager).
+    * The override is thread-local (inherited by threads started inside `body`).
+    */
   def withPrintOptions[A](o: PrintOptions)(body: => A): A =
-    val saved = opts
-    opts = o
-    try body
-    finally opts = saved
+    localOpts.withValue(Some(o))(body)
 
   /** Total order on doubles with NaN sorted last (NumPy's sort order). */
   def compareDouble(a: Double, b: Double): Int =
