@@ -97,9 +97,21 @@ object Complex:
 
   /** Lexicographic ordering on (re, im), as used by NumPy's sort; NaNs sort last. */
   given ordering: Ordering[Complex] with
+    // NumPy order: values without NaN lexicographically, then R+nanj, then nan+Rj, then nan+nanj
+    private def rank(c: Complex): Int =
+      if c.re.isNaN then (if c.im.isNaN then 3 else 2) else if c.im.isNaN then 1 else 0
     def compare(a: Complex, b: Complex): Int =
-      val c = Format.compareDouble(a.re, b.re)
-      if c != 0 then c else Format.compareDouble(a.im, b.im)
+      val ra = rank(a)
+      val rb = rank(b)
+      if ra != rb then Integer.compare(ra, rb)
+      else
+        ra match
+          case 0 =>
+            val c = java.lang.Double.compare(a.re + 0.0, b.re + 0.0)
+            if c != 0 then c else java.lang.Double.compare(a.im + 0.0, b.im + 0.0)
+          case 1 => java.lang.Double.compare(a.re + 0.0, b.re + 0.0)
+          case 2 => java.lang.Double.compare(a.im + 0.0, b.im + 0.0)
+          case _ => 0
 
   private[numscala] def format(c: Complex): String =
     def short(d: Double): String =
