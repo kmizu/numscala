@@ -30,6 +30,8 @@ object np
   val fft: FFT.type = FFT
   /** `numpy.random`. */
   val random: NpRandom.type = NpRandom
+  /** `numpy.lib` (`np.lib.stride_tricks.sliding_window_view`, ...). */
+  val lib: Lib.type = Lib
   /** `numpy.testing`. */
   val testing: Testing.type = Testing
   /** `numpy.polynomial`. */

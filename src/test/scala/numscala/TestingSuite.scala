@@ -28,3 +28,24 @@ class TestingSuite extends munit.FunSuite:
     assert_raises[IllegalArgumentException](np.zeros(2).reshape(3))
     assert_string_equal("x", "x")
   }
+
+class StrideTricksSuite extends munit.FunSuite:
+  import np.lib.stride_tricks.*
+  test("sliding_window_view") {
+    val x = np.arange(6)
+    val v = sliding_window_view(x, 3)
+    assertEquals(v.shape, Seq(4, 3))
+    assertEquals(v(1, ::).toList, List(1, 2, 3))
+    assertEquals(v.sum(1).toList, List(3L, 6L, 9L, 12L))
+    val m = np.arange(12).reshape(3, 4)
+    val w = sliding_window_view(m, Seq(2, 2))
+    assertEquals(w.shape, Seq(2, 3, 2, 2))
+    assertEquals(w(1, 2, ::, ::).toList, List(6, 7, 10, 11))
+    assertEquals(sliding_window_view(m, 2, 1).shape, Seq(3, 3, 2))
+    intercept[IllegalArgumentException](sliding_window_view(x, 7))
+  }
+  test("as_strided") {
+    val x = np.arange(5.0)
+    val r = as_strided(x, Seq(3, 3), Seq(8, 8))
+    assertEquals(r.toList, List(0.0, 1.0, 2.0, 1.0, 2.0, 3.0, 2.0, 3.0, 4.0))
+  }
