@@ -313,3 +313,26 @@ class StatsSuite extends munit.FunSuite:
     intercept[IllegalArgumentException](np.digitize(x, np.array(1.0, 3.0, 2.0)))
     intercept[IllegalArgumentException](np.digitize(np.array(Complex(1, 1)), inc))
   }
+
+  test("histogram literal ranges and density with bins count") {
+    val (h, e) = np.histogram(np.array(1, 2, 2, 3), 2, (0.0, 4.0))
+    assertEquals(h.toList, List(1L, 3L))
+    assertEquals(e.toList, List(0.0, 2.0, 4.0))
+    val (d, _) = np.histogram(np.array(1, 2, 2, 3), bins = 2, range = (0.0, 4.0), density = true)
+    assertEquals(d.toList, List(0.125, 0.375))
+    val (w, _) = np.histogram(np.array(1, 2, 2, 3), bins = 2, weights = np.array(1, 1, 1, 2))
+    assertEquals(w.toList, List(1.0, 4.0))
+    assertEquals(np.histogram_bin_edges(np.array(1.0, 2.0, 3.0), Seq(0.0, 5.0)).toList, List(0.0, 5.0))
+    val (h2, xe, ye) =
+      np.histogram2d(np.array(1.0, 2.0), np.array(1.0, 2.0), bins = (np.array(0.0, 1.5, 3.0), np.array(0.0, 3.0)))
+    assertEquals(h2.toList, List(1.0, 1.0))
+    assertEquals(xe.toList, List(0.0, 1.5, 3.0))
+    assertEquals(ye.toList, List(0.0, 3.0))
+    val (hd, _) = np.histogramdd(
+      np.array(Seq(Seq(0.5, 0.5), Seq(1.5, 0.5))),
+      bins = 2,
+      range = Seq((0.0, 2.0), (0.0, 1.0)),
+      density = true
+    )
+    assertEquals(hd.toList, List(0.0, 1.0, 0.0, 1.0))
+  }

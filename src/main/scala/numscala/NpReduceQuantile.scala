@@ -12,35 +12,35 @@ trait NpReduceQuantile:
 
   /** Median of all elements (`np.median(a)`); NaN if any element is NaN. */
   def median[T](a: NDArray[T])(using t: ToFloat[T]): t.Out =
-    t.dtype.fromDouble(NpQuantile.medianOf(doublesOf(a), false))
+    t.dtype.fromDouble(NpReduceQuantileImpl.medianOf(doublesOf(a), false))
 
   /** Median over `axis` (`np.median(a, axis, keepdims=...)`). */
   def median[T](a: NDArray[T], axis: Axis | Null = null, keepdims: Boolean = false)(using
       t: ToFloat[T]
   ): NDArray[t.Out] =
-    NpQuantile.lanes(a, axis, keepdims, Array.emptyIntArray, 1, t.dtype)((lane, out) =>
-      out(0) = NpQuantile.medianOf(lane, false)
+    NpReduceQuantileImpl.lanes(a, axis, keepdims, Array.emptyIntArray, 1, t.dtype)((lane, out) =>
+      out(0) = NpReduceQuantileImpl.medianOf(lane, false)
     )
 
   /** Median ignoring NaNs (`np.nanmedian(a)`). */
   def nanmedian[T](a: NDArray[T])(using t: ToFloat[T]): t.Out =
-    t.dtype.fromDouble(NpQuantile.medianOf(doublesOf(a), true))
+    t.dtype.fromDouble(NpReduceQuantileImpl.medianOf(doublesOf(a), true))
 
   /** Median over `axis` ignoring NaNs (`np.nanmedian(a, axis, keepdims=...)`). */
   def nanmedian[T](a: NDArray[T], axis: Axis | Null = null, keepdims: Boolean = false)(using
       t: ToFloat[T]
   ): NDArray[t.Out] =
-    NpQuantile.lanes(a, axis, keepdims, Array.emptyIntArray, 1, t.dtype)((lane, out) =>
-      out(0) = NpQuantile.medianOf(lane, true)
+    NpReduceQuantileImpl.lanes(a, axis, keepdims, Array.emptyIntArray, 1, t.dtype)((lane, out) =>
+      out(0) = NpReduceQuantileImpl.medianOf(lane, true)
     )
 
   /** The `q`-th quantile (`0 <= q <= 1`) of all elements (`np.quantile(a, q)`). */
   def quantile[T](a: NDArray[T], q: Double)(using t: ToFloat[T]): t.Out =
-    NpQuantile.scalar(a, q, "linear", false, false, t.dtype)
+    NpReduceQuantileImpl.scalar(a, q, "linear", false, false, t.dtype)
 
   /** The `q`-th quantile with an interpolation `method` (`np.quantile(a, q, method=...)`). */
   def quantile[T](a: NDArray[T], q: Double, method: String)(using t: ToFloat[T]): t.Out =
-    NpQuantile.scalar(a, q, method, false, false, t.dtype)
+    NpReduceQuantileImpl.scalar(a, q, method, false, false, t.dtype)
 
   /** Quantiles over `axis` (`np.quantile(a, q, axis, method=..., keepdims=...)`). */
   def quantile[T](
@@ -50,15 +50,15 @@ trait NpReduceQuantile:
       method: String = "linear",
       keepdims: Boolean = false
   )(using t: ToFloat[T]): NDArray[t.Out] =
-    NpQuantile.general(a, q, axis, method, keepdims, false, false, t.dtype)
+    NpReduceQuantileImpl.general(a, q, axis, method, keepdims, false, false, t.dtype)
 
   /** The `q`-th percentile (`0 <= q <= 100`) of all elements (`np.percentile(a, q)`). */
   def percentile[T](a: NDArray[T], q: Double)(using t: ToFloat[T]): t.Out =
-    NpQuantile.scalar(a, q, "linear", true, false, t.dtype)
+    NpReduceQuantileImpl.scalar(a, q, "linear", true, false, t.dtype)
 
   /** The `q`-th percentile with an interpolation `method` (`np.percentile(a, q, method=...)`). */
   def percentile[T](a: NDArray[T], q: Double, method: String)(using t: ToFloat[T]): t.Out =
-    NpQuantile.scalar(a, q, method, true, false, t.dtype)
+    NpReduceQuantileImpl.scalar(a, q, method, true, false, t.dtype)
 
   /** Percentiles over `axis` (`np.percentile(a, q, axis, method=..., keepdims=...)`). */
   def percentile[T](
@@ -68,15 +68,15 @@ trait NpReduceQuantile:
       method: String = "linear",
       keepdims: Boolean = false
   )(using t: ToFloat[T]): NDArray[t.Out] =
-    NpQuantile.general(a, q, axis, method, keepdims, true, false, t.dtype)
+    NpReduceQuantileImpl.general(a, q, axis, method, keepdims, true, false, t.dtype)
 
   /** Quantile ignoring NaNs (`np.nanquantile(a, q)`). */
   def nanquantile[T](a: NDArray[T], q: Double)(using t: ToFloat[T]): t.Out =
-    NpQuantile.scalar(a, q, "linear", false, true, t.dtype)
+    NpReduceQuantileImpl.scalar(a, q, "linear", false, true, t.dtype)
 
   /** Quantile ignoring NaNs with a `method` (`np.nanquantile(a, q, method=...)`). */
   def nanquantile[T](a: NDArray[T], q: Double, method: String)(using t: ToFloat[T]): t.Out =
-    NpQuantile.scalar(a, q, method, false, true, t.dtype)
+    NpReduceQuantileImpl.scalar(a, q, method, false, true, t.dtype)
 
   /** Quantiles over `axis` ignoring NaNs (`np.nanquantile(a, q, axis, method=..., keepdims=...)`). */
   def nanquantile[T](
@@ -86,15 +86,15 @@ trait NpReduceQuantile:
       method: String = "linear",
       keepdims: Boolean = false
   )(using t: ToFloat[T]): NDArray[t.Out] =
-    NpQuantile.general(a, q, axis, method, keepdims, false, true, t.dtype)
+    NpReduceQuantileImpl.general(a, q, axis, method, keepdims, false, true, t.dtype)
 
   /** Percentile ignoring NaNs (`np.nanpercentile(a, q)`). */
   def nanpercentile[T](a: NDArray[T], q: Double)(using t: ToFloat[T]): t.Out =
-    NpQuantile.scalar(a, q, "linear", true, true, t.dtype)
+    NpReduceQuantileImpl.scalar(a, q, "linear", true, true, t.dtype)
 
   /** Percentile ignoring NaNs with a `method` (`np.nanpercentile(a, q, method=...)`). */
   def nanpercentile[T](a: NDArray[T], q: Double, method: String)(using t: ToFloat[T]): t.Out =
-    NpQuantile.scalar(a, q, method, true, true, t.dtype)
+    NpReduceQuantileImpl.scalar(a, q, method, true, true, t.dtype)
 
   /** Percentiles over `axis` ignoring NaNs (`np.nanpercentile(a, q, axis, method=..., keepdims=...)`). */
   def nanpercentile[T](
@@ -104,10 +104,10 @@ trait NpReduceQuantile:
       method: String = "linear",
       keepdims: Boolean = false
   )(using t: ToFloat[T]): NDArray[t.Out] =
-    NpQuantile.general(a, q, axis, method, keepdims, true, true, t.dtype)
+    NpReduceQuantileImpl.general(a, q, axis, method, keepdims, true, true, t.dtype)
 
 /** Quantile kernels (NumPy's `_quantile`, Hyndman & Fan methods). */
-private[numscala] object NpQuantile:
+private[numscala] object NpReduceQuantileImpl:
 
   val methods: Set[String] = Set(
     "inverted_cdf",

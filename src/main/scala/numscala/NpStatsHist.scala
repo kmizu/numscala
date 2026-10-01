@@ -13,14 +13,14 @@ trait NpStatsHist:
   type Bins = Int | String | NDArray[?] | Seq[Double]
 
   /** Histogram with 10 equal-width bins (`np.histogram(a)`): `(counts, bin_edges)`. */
-  def histogram[T](a: NDArray[T]): (NDArray[Long], NDArray[Double]) = NpHist.counts(a, 10, null)
+  def histogram[T](a: NDArray[T]): (NDArray[Long], NDArray[Double]) = NpStatsHistImpl.counts(a, 10, null)
 
   /** Histogram with the given `bins` (`np.histogram(a, bins)`): `(counts, bin_edges)`. */
-  def histogram[T](a: NDArray[T], bins: Bins): (NDArray[Long], NDArray[Double]) = NpHist.counts(a, bins, null)
+  def histogram[T](a: NDArray[T], bins: Bins): (NDArray[Long], NDArray[Double]) = NpStatsHistImpl.counts(a, bins, null)
 
   /** Histogram over `range` (`np.histogram(a, bins, range)`): `(counts, bin_edges)`. */
   def histogram[T](a: NDArray[T], bins: Bins, range: (Double, Double)): (NDArray[Long], NDArray[Double]) =
-    NpHist.counts(a, bins, range)
+    NpStatsHistImpl.counts(a, bins, range)
 
   /** Weighted and/or normalized histogram (`np.histogram(a, bins, range, density, weights)`).
     * Returns floating-point values (sums of weights, or a probability density if `density`).
@@ -32,7 +32,7 @@ trait NpStatsHist:
       density: Boolean = false,
       weights: NDArray[?] | Null = null
   ): (NDArray[Double], NDArray[Double]) =
-    NpHist.weighted(a, bins, range, density, weights)
+    NpStatsHistImpl.weighted(a, bins, range, density, weights)
 
   /** The bin edges `np.histogram` would use (`np.histogram_bin_edges(a, bins, range, weights)`). */
   def histogram_bin_edges[T](
@@ -41,10 +41,10 @@ trait NpStatsHist:
       range: (Double, Double) | Null = null,
       weights: NDArray[?] | Null = null
   ): NDArray[Double] =
-    val av = NpHist.values(a)
+    val av = NpStatsHistImpl.values(a)
     if weights != null && weights.size != a.size then
       throw new IllegalArgumentException("weights should have the same shape as a.")
-    vecD(NpHist.binEdges(av, a.dtype.kind == 'i' || a.dtype.kind == 'b', bins, range, weights != null)._1)
+    vecD(NpStatsHistImpl.binEdges(av, a.dtype.kind == 'i' || a.dtype.kind == 'b', bins, range, weights != null)._1)
 
   /** Multidimensional histogram of `sample` (shape `(N, D)`, or `(N,)` for `D = 1`)
     * (`np.histogramdd(sample, bins, range, density, weights)`): `(hist, edges)`.
@@ -63,7 +63,7 @@ trait NpStatsHist:
     val d = s.shapeArr(1)
     val all = doublesOf(s, "sample")
     val cols = Array.tabulate(d)(j => Array.tabulate(n)(i => all(i * d + j)))
-    NpHist.dd(cols, bins, range, density, weights)
+    NpStatsHistImpl.dd(cols, bins, range, density, weights)
 
   /** Bi-dimensional histogram of points `(x, y)` (`np.histogram2d(x, y, bins, range, density, weights)`):
     * `(H, xedges, yedges)`. `bins` is a count, a pair of counts, one edge array for both
@@ -88,13 +88,13 @@ trait NpStatsHist:
     val rs: Seq[(Double, Double) | Null] | Null = range match
       case null => null
       case (r0, r1) => Seq(r0.asInstanceOf[(Double, Double)], r1.asInstanceOf[(Double, Double)])
-    val (h, edges) = NpHist.dd(Array(xs, ys), bs, rs, density, weights)
+    val (h, edges) = NpStatsHistImpl.dd(Array(xs, ys), bs, rs, density, weights)
     (h, edges(0), edges(1))
 
   /** Number of occurrences of each non-negative integer (`np.bincount(x, minlength=...)`). */
   def bincount[T](x: NDArray[T], minlength: Int = 0): NDArray[Long] =
-    val idx = NpHist.bincountIdx(x, minlength)
-    val out = new Array[Long](NpHist.bincountLen(idx, minlength))
+    val idx = NpStatsHistImpl.bincountIdx(x, minlength)
+    val out = new Array[Long](NpStatsHistImpl.bincountLen(idx, minlength))
     idx.foreach(i => out(i) += 1)
     NDArray.fromArray(out, Array(out.length))
 
@@ -103,10 +103,10 @@ trait NpStatsHist:
 
   /** Weighted bin counts with a minimum length (`np.bincount(x, weights, minlength)`). */
   def bincount[T](x: NDArray[T], weights: NDArray[?], minlength: Int): NDArray[Double] =
-    val idx = NpHist.bincountIdx(x, minlength)
+    val idx = NpStatsHistImpl.bincountIdx(x, minlength)
     val w = doublesOf(weights, "weights")
     if w.length != idx.length then throw new IllegalArgumentException("The weights and list don't have the same length.")
-    val out = new Array[Double](NpHist.bincountLen(idx, minlength))
+    val out = new Array[Double](NpStatsHistImpl.bincountLen(idx, minlength))
     var i = 0
     while i < idx.length do
       out(idx(i)) += w(i)
@@ -117,19 +117,19 @@ trait NpStatsHist:
   def digitize(x: NDArray[?], bins: NDArray[?] | Seq[Double], right: Boolean = false): NDArray[Int] =
     if x.dtype.isComplex then throw new IllegalArgumentException("x may not be complex")
     val xs = doublesOf(x, "x")
-    val b = NpHist.edgesOf(bins, "bins")
-    val f = NpHist.digitizer(b, right)
+    val b = NpStatsHistImpl.edgesOf(bins, "bins")
+    val f = NpStatsHistImpl.digitizer(b, right)
     NDArray.fromArray(xs.map(f), x.shapeArr.clone())
 
   /** Bin index of a single value (`np.digitize(x, bins)` with scalar `x`). */
-  def digitize(x: Double, bins: NDArray[?] | Seq[Double]): Int = NpHist.digitizer(NpHist.edgesOf(bins, "bins"), false)(x)
+  def digitize(x: Double, bins: NDArray[?] | Seq[Double]): Int = NpStatsHistImpl.digitizer(NpStatsHistImpl.edgesOf(bins, "bins"), false)(x)
 
   /** Bin index of a single value (`np.digitize(x, bins, right)` with scalar `x`). */
   def digitize(x: Double, bins: NDArray[?] | Seq[Double], right: Boolean): Int =
-    NpHist.digitizer(NpHist.edgesOf(bins, "bins"), right)(x)
+    NpStatsHistImpl.digitizer(NpStatsHistImpl.edgesOf(bins, "bins"), right)(x)
 
 /** Histogram kernels (port of `numpy/lib/_histograms_impl.py`). */
-private[numscala] object NpHist:
+private[numscala] object NpStatsHistImpl:
 
   def values(a: NDArray[?]): Array[Double] = doublesOf(a, "a")
 
@@ -264,7 +264,7 @@ private[numscala] object NpHist:
       case "fd" =>
         val s = x.clone()
         java.util.Arrays.sort(s)
-        val iqr = NpQuantile.quantileSorted(s, n, 0.75, "linear") - NpQuantile.quantileSorted(s, n, 0.25, "linear")
+        val iqr = NpReduceQuantileImpl.quantileSorted(s, n, 0.75, "linear") - NpReduceQuantileImpl.quantileSorted(s, n, 0.25, "linear")
         2.0 * iqr * math.pow(n.toDouble, -1.0 / 3.0)
       case "auto" =>
         val fd = estimatorWidth("fd", x, range)
