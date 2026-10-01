@@ -23,7 +23,7 @@ private[numscala] object NpIONpy:
       case 'U' =>
         val n = math.max(1, a.toSeq.map(x => codePoints(x.asInstanceOf[String])).maxOption.getOrElse(1))
         (s"<U$n", 4 * n)
-      case 'i' if d.itemSize == 1 => ("|i1", 1)
+      case k if d.itemSize == 1 => (s"|${k}1", 1)
       case k => (s"<$k${d.itemSize}", d.itemSize)
 
   /** Parsed `descr`: dtype in memory, byte order, on-disk kind and on-disk item size. */
@@ -47,9 +47,10 @@ private[numscala] object NpIONpy:
       case ('i', 2) => DType.Int16
       case ('i', 4) => DType.Int32
       case ('i', 8) => DType.Int64
-      case ('u', 1) => DType.Int16
-      case ('u', 2) => DType.Int32
-      case ('u', 4) => DType.Int64
+      case ('u', 1) => DType.UInt8
+      case ('u', 2) => DType.UInt16
+      case ('u', 4) => DType.UInt32
+      case ('u', 8) => DType.UInt64
       case ('f', 2) => DType.Float32
       case ('f', 4) => DType.Float32
       case ('f', 8) => DType.Float64
@@ -260,9 +261,11 @@ private[numscala] object NpIONpy:
       case ('i', 2) => Array.fill(count)(bb.getShort())
       case ('i', 4) => Array.fill(count)(bb.getInt())
       case ('i', 8) => Array.fill(count)(bb.getLong())
-      case ('u', 1) => Array.fill(count)((bb.get() & 0xff).toShort)
-      case ('u', 2) => Array.fill(count)(bb.getShort() & 0xffff)
-      case ('u', 4) => Array.fill(count)(bb.getInt().toLong & 0xffffffffL)
+      // unsigned types share the bit patterns of the signed buffers (opaque types)
+      case ('u', 1) => Array.fill(count)(bb.get())
+      case ('u', 2) => Array.fill(count)(bb.getShort())
+      case ('u', 4) => Array.fill(count)(bb.getInt())
+      case ('u', 8) => Array.fill(count)(bb.getLong())
       case ('f', 2) => Array.fill(count)(halfToFloat(bb.getShort() & 0xffff))
       case ('f', 4) => Array.fill(count)(bb.getFloat())
       case ('f', 8) => Array.fill(count)(bb.getDouble())
