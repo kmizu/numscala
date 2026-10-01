@@ -198,8 +198,8 @@ final class NDArray[T] private[numscala] (
       }
       NDArray.fromArray(out, shapeArr.clone())
 
-  @annotation.targetName("astypeExplicit")
-  def astype[U](u: DType[U]): NDArray[U] = astype[U](using u)
+  /** `astype` with an explicit dtype value: `a.astypeOf(DType.Int32)`. */
+  def astypeOf[U](u: DType[U]): NDArray[U] = astype[U](using u)
 
   /** `astype` for a dtype only known at runtime. */
   def astypeDyn(u: DType[?]): NDArray[?] = astype(using u.asInstanceOf[DType[Any]])

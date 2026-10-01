@@ -30,5 +30,7 @@ object np
   val fft: FFT.type = FFT
   /** `numpy.random`. */
   val random: NpRandom.type = NpRandom
+  /** `numpy.testing`. */
+  val testing: Testing.type = Testing
   /** `numpy.polynomial`. */
   val polynomial: PolynomialModule.type = PolynomialModule
