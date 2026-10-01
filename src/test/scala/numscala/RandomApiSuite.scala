@@ -289,7 +289,7 @@ class RandomApiSuite extends munit.FunSuite:
       g.multivariate_normal(Seq(0.0, 0.0), Seq(Seq(1.0, 2.0), Seq(2.0, 1.0)), check_valid = "raise"))
     bad("n too large or p too small")(g.negative_binomial(1e18, 1e-5))
     intercept[ArithmeticException](g.uniform(0.0, Double.PositiveInfinity))
-    intercept[ArithmeticException](
+    intercept[LinAlgError](
       g.multivariate_normal(Seq(0.0, 0.0), Seq(Seq(1.0, 2.0), Seq(2.0, 1.0)), method = "cholesky"))
     bad("Seed must be between 0 and 2**32 - 1")(np.random.RandomState(1L << 33))
     bad("Seed must be non-empty")(np.random.RandomState(Seq.empty[Int]))
