@@ -92,14 +92,21 @@ class MiscSuite extends munit.FunSuite:
 
   test("iinfo") {
     val i = np.iinfo(DType.Int32)
-    assertEquals((i.min, i.max, i.bits, i.kind), (-2147483648L, 2147483647L, 32, 'i'))
+    assertEquals((i.min, i.max, i.bits, i.kind), (BigInt(-2147483648L), BigInt(2147483647L), 32, 'i'))
     assertEquals(
       i.toString,
       "Machine parameters for int32\n---------------------------------------------------------------\nmin = -2147483648\nmax = 2147483647\n---------------------------------------------------------------\n"
     )
     assertEquals(np.iinfo("int8").repr, "iinfo(min=-128, max=127, dtype=int8)")
-    assertEquals(np.iinfo(DType.Int64).max, Long.MaxValue)
-    assertEquals(np.iinfo(DType.Int16).min, -32768L)
+    assertEquals(np.iinfo(DType.Int64).max, BigInt(Long.MaxValue))
+    assertEquals(np.iinfo(DType.UInt64).max.toString, "18446744073709551615")
+    assertEquals(np.iinfo("uint8").repr, "iinfo(min=0, max=255, dtype=uint8)")
+    assertEquals(np.min_scalar_type(10), DType.UInt8)
+    assertEquals(np.min_scalar_type(-1), DType.Int8)
+    assert(np.can_cast(DType.UInt8, DType.Int16, "safe"))
+    assert(!np.can_cast(DType.UInt8, DType.Int8, "safe"))
+    assert(np.issubdtype(DType.UInt32, np.unsignedinteger))
+    assertEquals(np.iinfo(DType.Int16).min, BigInt(-32768))
     intercept[IllegalArgumentException](np.iinfo(DType.Float64))
     intercept[IllegalArgumentException](np.iinfo(DType.Bool))
   }
@@ -137,11 +144,11 @@ class MiscSuite extends munit.FunSuite:
   }
 
   test("min_scalar_type / isscalar / dtype") {
-    assertEquals(np.min_scalar_type(10), DType.Int8)
+    assertEquals(np.min_scalar_type(10), DType.UInt8)
     assertEquals(np.min_scalar_type(-10), DType.Int8)
     assertEquals(np.min_scalar_type(-200), DType.Int16)
-    assertEquals(np.min_scalar_type(100000), DType.Int32)
-    assertEquals(np.min_scalar_type(1L << 40), DType.Int64)
+    assertEquals(np.min_scalar_type(100000), DType.UInt32)
+    assertEquals(np.min_scalar_type(1L << 40), DType.UInt64)
     assertEquals(np.min_scalar_type(3.1), DType.Float32)
     assertEquals(np.min_scalar_type(1e50), DType.Float64)
     assertEquals(np.min_scalar_type(Complex(0, 1)), DType.Complex128)

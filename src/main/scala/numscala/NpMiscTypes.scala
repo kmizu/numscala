@@ -26,6 +26,7 @@ object DTypeCategory:
   def of(d: DType[?]): DTypeCategory = d.kind match
     case 'b' => bool_
     case 'i' => signedinteger
+    case 'u' => unsignedinteger
     case 'f' => floating
     case 'c' => complexfloating
     case _ => str_
@@ -72,9 +73,9 @@ final case class FInfo(
        |""".stripMargin
 
 /** Machine limits of an integer type (`np.iinfo`). */
-final case class IInfo(dtype: DType[?], bits: Int, min: Long, max: Long):
-  /** The kind character, `'i'`. */
-  def kind: Char = 'i'
+final case class IInfo(dtype: DType[?], bits: Int, min: BigInt, max: BigInt):
+  /** The kind character, `'i'` or `'u'`. */
+  def kind: Char = dtype.kind
   /** NumPy's `repr(np.iinfo(...))`. */
   def repr: String = s"iinfo(min=$min, max=$max, dtype=$dtype)"
   override def toString: String =
@@ -105,7 +106,7 @@ private[numscala] object NpMiscTypes:
     Seq(DType.Bool, DType.Int8, DType.Int16, DType.Int32, DType.Int64, DType.Float32, DType.Float64, DType.Complex128)
   private def kindOrder(d: DType[?]): Int = d.kind match
     case 'b' => 0
-    case 'i' => 1
+    case 'u' | 'i' => 1
     case 'f' => 2
     case 'c' => 3
     case _ => 4
@@ -119,9 +120,10 @@ private[numscala] object NpMiscTypes:
     else if t.isBool then false
     else
       (f.kind, t.kind) match
-        case ('i', 'i') => f.itemSize <= t.itemSize
-        case ('i', 'f') => (t eq DType.Float64) || f.itemSize <= 2
-        case ('i', 'c') => true
+        case ('i', 'i') | ('u', 'u') => f.itemSize <= t.itemSize
+        case ('u', 'i') => f.itemSize < t.itemSize
+        case ('i' | 'u', 'f') => (t eq DType.Float64) || f.itemSize <= 2
+        case ('i' | 'u', 'c') => true
         case ('f', 'f') => f.itemSize <= t.itemSize
         case ('f', 'c') => true
         case ('c', 'c') => true
@@ -187,9 +189,14 @@ private[numscala] object NpMiscTypes:
         case s: Short => s.toLong
         case i: Int => i.toLong
         case l: Long => l
-      if l >= Byte.MinValue && l <= Byte.MaxValue then DType.Int8
-      else if l >= Short.MinValue && l <= Short.MaxValue then DType.Int16
-      else if l >= Int.MinValue && l <= Int.MaxValue then DType.Int32
+      if l >= 0 then
+        if l <= 0xffL then DType.UInt8
+        else if l <= 0xffffL then DType.UInt16
+        else if l <= 0xffffffffL then DType.UInt32
+        else DType.UInt64
+      else if l >= Byte.MinValue then DType.Int8
+      else if l >= Short.MinValue then DType.Int16
+      else if l >= Int.MinValue then DType.Int32
       else DType.Int64
     case f: Float => DType.Float32
     case d: Double =>

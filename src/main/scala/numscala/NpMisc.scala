@@ -40,7 +40,7 @@ trait NpMisc extends NpMiscPrint:
   val integer: DTypeCategory = DTypeCategory.integer
   /** `np.signedinteger`. */
   val signedinteger: DTypeCategory = DTypeCategory.signedinteger
-  /** `np.unsignedinteger` (no num-scala dtype belongs to it). */
+  /** `np.unsignedinteger` (`uint8` ... `uint64`). */
   val unsignedinteger: DTypeCategory = DTypeCategory.unsignedinteger
   /** `np.inexact`. */
   val inexact: DTypeCategory = DTypeCategory.inexact
@@ -167,7 +167,9 @@ trait NpMisc extends NpMiscPrint:
   /** `np.iinfo`: machine limits of an integer dtype. */
   def iinfo(dtype: DType[?] | String): IInfo =
     NpMiscTypes.resolve(dtype) match
-      case d: IntDType[?] => IInfo(d, d.bits, d.toLong(d.minValue), d.toLong(d.maxValue))
+      case d: IntDType[?] =>
+        if d.signed then IInfo(d, d.bits, BigInt(d.toLong(d.minValue)), BigInt(d.toLong(d.maxValue)))
+        else IInfo(d, d.bits, BigInt(0), (BigInt(1) << d.bits) - 1)
       case d => throw new IllegalArgumentException(s"Invalid integer data type '${d.kind}'.")
 
   /** `np.promote_types`: the smallest dtype to which both can be safely cast. */
