@@ -1,18 +1,35 @@
 #!/usr/bin/env python3
 """Generates src/main/scala/numscala/TypeClasses.scala (type promotion tables)."""
 T = [("Boolean","Bool","b"),("Byte","Int8","i1"),("Short","Int16","i2"),("Int","Int32","i4"),
-     ("Long","Int64","i8"),("Float","Float32","f4"),("Double","Float64","f8"),("Complex","Complex128","c16")]
+     ("Long","Int64","i8"),("UInt8","UInt8","u1"),("UInt16","UInt16","u2"),("UInt32","UInt32","u4"),
+     ("UInt64","UInt64","u8"),("Float","Float32","f4"),("Double","Float64","f8"),("Complex","Complex128","c16")]
 order = [t[0] for t in T]
 dt = {t[0]: t[1] for t in T}
+kinds = {"Boolean":"b","Byte":"i","Short":"i","Int":"i","Long":"i","UInt8":"u","UInt16":"u","UInt32":"u",
+         "UInt64":"u","Float":"f","Double":"f","Complex":"c"}
+bits = {"Boolean":8,"Byte":8,"Short":16,"Int":32,"Long":64,"UInt8":8,"UInt16":16,"UInt32":32,"UInt64":64,
+        "Float":32,"Double":64,"Complex":128}
+signed_of = {8:"Byte",16:"Short",32:"Int",64:"Long"}
 def promote(a,b):
+    """Mirror of DType.promote."""
     if a==b: return a
-    lo,hi = sorted([a,b], key=order.index)
-    if hi=="Complex": return "Complex"
-    if hi=="Float" and lo in ("Int","Long"): return "Double"
-    return hi
+    ka,kb = kinds[a],kinds[b]
+    if "c" in (ka,kb): return "Complex"
+    if ka=="b": return b
+    if kb=="b": return a
+    if ka=="f" and kb=="f": return a if bits[a]>=bits[b] else b
+    if ka=="f" or kb=="f":
+        f,i = (a,b) if ka=="f" else (b,a)
+        if f=="Double": return "Double"
+        return "Float" if bits[i]<=16 else "Double"
+    if ka==kb: return a if bits[a]>=bits[b] else b
+    u,s_ = (a,b) if ka=="u" else (b,a)
+    if bits[s_]>bits[u]: return s_
+    return {8:"Short",16:"Int",32:"Long"}.get(bits[u],"Double")
 def inexact(a):
     return {"Float":"Float","Double":"Double","Complex":"Complex"}.get(a,"Double")
 def sumof(a):
+    if kinds[a]=="u": return "UInt64"
     return a if a in ("Long","Float","Double","Complex") else "Long"
 def realof(a):
     return {"Float":"Float"}.get(a,"Double")

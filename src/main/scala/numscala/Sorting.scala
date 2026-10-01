@@ -5,6 +5,19 @@ private[numscala] object Sorting:
 
   /** Sorts `out(0 until n)` in place in NumPy order (NaN last). */
   def sortBuffer[T](d: DType[T], out: Array[T], n: Int): Unit =
+    if d.isUnsigned then
+      // order by unsigned value: flip the sign bit of the zero-extended value
+      val keys = new Array[Long](n)
+      var i = 0
+      while i < n do
+        keys(i) = d.toLong(out(i)) ^ (if d.itemSize == 8 then Long.MinValue else 0L)
+        i += 1
+      java.util.Arrays.sort(keys)
+      i = 0
+      while i < n do
+        out(i) = d.fromLong(keys(i) ^ (if d.itemSize == 8 then Long.MinValue else 0L))
+        i += 1
+      return
     (out: Any) match
       case x: Array[Double] => java.util.Arrays.sort(x, 0, n)
       case x: Array[Float] => java.util.Arrays.sort(x, 0, n)
@@ -46,11 +59,12 @@ private[numscala] object Sorting:
       case k: Array[Double] => mergeSortD(out, tmp, 0, n, k)
       case _ =>
         d.kind match
-          case 'i' | 'b' =>
+          case 'i' | 'u' | 'b' =>
+            val flip = if d.isUnsigned && d.itemSize == 8 then Long.MinValue else 0L
             val lk = new Array[Long](n)
             var j = 0
             while j < n do
-              lk(j) = d.toLong(keys(j))
+              lk(j) = d.toLong(keys(j)) ^ flip
               j += 1
             mergeSortL(out, tmp, 0, n, lk)
           case 'f' =>

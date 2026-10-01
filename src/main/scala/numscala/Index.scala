@@ -62,7 +62,7 @@ object Index:
     case a: NDArray[?] =>
       a.dtype.kind match
         case 'b' => Mask(a.asInstanceOf[NDArray[Boolean]])
-        case 'i' => Take(a.asInstanceOf[NDArray[Any]].astypeDyn(DType.Int32).asInstanceOf[NDArray[Int]])
+        case 'i' | 'u' => Take(a.asInstanceOf[NDArray[Any]].astypeDyn(DType.Int32).asInstanceOf[NDArray[Int]])
         case _ => throw new IndexOutOfBoundsException("arrays used as indices must be of integer (or boolean) type")
     case arr: Array[?] =>
       arr match

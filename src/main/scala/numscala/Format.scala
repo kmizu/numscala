@@ -136,7 +136,7 @@ object Format:
       case 'b' =>
         val w = if values.exists(v => !dtype.toBoolean(v)) then 5 else 4
         v => padLeft(dtype.format(v), w)
-      case 'i' =>
+      case 'i' | 'u' =>
         val w = if values.isEmpty then 0 else values.map(v => dtype.format(v).length).max
         v => padLeft(dtype.format(v), w)
       case 'f' =>

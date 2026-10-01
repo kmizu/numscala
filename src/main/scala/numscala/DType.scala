@@ -59,18 +59,19 @@ sealed trait DType[T]:
     case other => throw new IllegalArgumentException(s"cannot convert $other to $name")
 
   def isBool: Boolean = kind == 'b'
-  def isInteger: Boolean = kind == 'i'
+  def isInteger: Boolean = kind == 'i' || kind == 'u'
+  def isUnsigned: Boolean = kind == 'u'
   def isFloating: Boolean = kind == 'f'
   def isComplex: Boolean = kind == 'c'
   def isString: Boolean = kind == 'U'
-  def isNumeric: Boolean = kind == 'i' || kind == 'f' || kind == 'c'
+  def isNumeric: Boolean = kind == 'i' || kind == 'u' || kind == 'f' || kind == 'c'
   def isInexact: Boolean = kind == 'f' || kind == 'c'
 
   /** NumPy-style type character string, e.g. `<f8`. */
   def str: String = kind match
     case 'b' => "|b1"
     case 'U' => "<U"
-    case k => s"<$k$itemSize"
+    case k => s"${if itemSize == 1 then "|" else "<"}$k$itemSize"
 
   override def toString: String = name
 
@@ -106,8 +107,8 @@ sealed trait RealDType[T] extends NumDType[T]:
   def minValue: T
   def maxValue: T
 
-sealed abstract class IntDType[T](name: String, itemSize: Int)(using ClassTag[T])
-    extends DTypeBase[T](name, 'i', itemSize), RealDType[T]:
+sealed abstract class IntDType[T](name: String, itemSize: Int, val signed: Boolean = true)(using ClassTag[T])
+    extends DTypeBase[T](name, if signed then 'i' else 'u', itemSize), RealDType[T]:
   def bits: Int = itemSize * 8
   def and(x: T, y: T): T = fromLong(toLong(x) & toLong(y))
   def or(x: T, y: T): T = fromLong(toLong(x) | toLong(y))
@@ -326,6 +327,61 @@ object DType:
     override def minus(x: Long, y: Long): Long = x - y
     override def times(x: Long, y: Long): Long = x * y
 
+  object UInt8 extends IntDType[numscala.UInt8]("uint8", 1, false):
+    def zero: numscala.UInt8 = numscala.UInt8(0)
+    def one: numscala.UInt8 = numscala.UInt8(1)
+    def fromLong(v: Long): numscala.UInt8 = numscala.UInt8(v)
+    def toLong(x: numscala.UInt8): Long = x.toLong
+    val ordering: Ordering[numscala.UInt8] = Ordering.by[numscala.UInt8, Int](_.toInt)
+    def minValue: numscala.UInt8 = numscala.UInt8.MinValue
+    def maxValue: numscala.UInt8 = numscala.UInt8.MaxValue
+
+  object UInt16 extends IntDType[numscala.UInt16]("uint16", 2, false):
+    def zero: numscala.UInt16 = numscala.UInt16(0)
+    def one: numscala.UInt16 = numscala.UInt16(1)
+    def fromLong(v: Long): numscala.UInt16 = numscala.UInt16(v)
+    def toLong(x: numscala.UInt16): Long = x.toLong
+    val ordering: Ordering[numscala.UInt16] = Ordering.by[numscala.UInt16, Int](_.toInt)
+    def minValue: numscala.UInt16 = numscala.UInt16.MinValue
+    def maxValue: numscala.UInt16 = numscala.UInt16.MaxValue
+
+  object UInt32 extends IntDType[numscala.UInt32]("uint32", 4, false):
+    def zero: numscala.UInt32 = numscala.UInt32(0)
+    def one: numscala.UInt32 = numscala.UInt32(1)
+    def fromLong(v: Long): numscala.UInt32 = numscala.UInt32(v)
+    def toLong(x: numscala.UInt32): Long = x.toLong
+    val ordering: Ordering[numscala.UInt32] = Ordering.by[numscala.UInt32, Long](_.toLong)
+    def minValue: numscala.UInt32 = numscala.UInt32.MinValue
+    def maxValue: numscala.UInt32 = numscala.UInt32.MaxValue
+
+  /** `uint64`. `toLong` returns the raw bits; use `toDouble`/`format` for the unsigned value. */
+  object UInt64 extends IntDType[numscala.UInt64]("uint64", 8, false):
+    def zero: numscala.UInt64 = numscala.UInt64(0L)
+    def one: numscala.UInt64 = numscala.UInt64(1L)
+    def fromLong(v: Long): numscala.UInt64 = numscala.UInt64(v)
+    def toLong(x: numscala.UInt64): Long = x.toLongBits
+    val ordering: Ordering[numscala.UInt64] = new Ordering[numscala.UInt64]:
+      def compare(a: numscala.UInt64, b: numscala.UInt64): Int = java.lang.Long.compareUnsigned(a.toLongBits, b.toLongBits)
+    def minValue: numscala.UInt64 = numscala.UInt64.MinValue
+    def maxValue: numscala.UInt64 = numscala.UInt64.MaxValue
+    override def toDouble(x: numscala.UInt64): Double = x.toDouble
+    override def fromDouble(v: Double): numscala.UInt64 =
+      if v >= 9.223372036854775807e18 then numscala.UInt64((v / 2.0).toLong << 1) else numscala.UInt64(v.toLong)
+    override def format(x: numscala.UInt64): String = x.unsignedString
+    override def fromString(s: String): numscala.UInt64 = numscala.UInt64.parse(s)
+    override def max(x: numscala.UInt64, y: numscala.UInt64): numscala.UInt64 = if compare(x, y) >= 0 then x else y
+    override def min(x: numscala.UInt64, y: numscala.UInt64): numscala.UInt64 = if compare(x, y) <= 0 then x else y
+    override def floorDiv(x: numscala.UInt64, y: numscala.UInt64): numscala.UInt64 =
+      if y.toLongBits == 0L then zero else numscala.UInt64(java.lang.Long.divideUnsigned(x.toLongBits, y.toLongBits))
+    override def mod(x: numscala.UInt64, y: numscala.UInt64): numscala.UInt64 =
+      if y.toLongBits == 0L then zero else numscala.UInt64(java.lang.Long.remainderUnsigned(x.toLongBits, y.toLongBits))
+    override def fmod(x: numscala.UInt64, y: numscala.UInt64): numscala.UInt64 = mod(x, y)
+    override def abs(x: numscala.UInt64): numscala.UInt64 = x
+    override def sign(x: numscala.UInt64): numscala.UInt64 = if x.toLongBits == 0L then zero else one
+    override def shiftRight(x: numscala.UInt64, y: numscala.UInt64): numscala.UInt64 =
+      val s = y.toLongBits
+      if s >= 64 || s < 0 then zero else numscala.UInt64(x.toLongBits >>> s)
+
   object Float32 extends FloatDType[Float]("float32", 4):
     def zero: Float = 0f
     def one: Float = 1f
@@ -379,6 +435,10 @@ object DType:
   given int16: Int16.type = Int16
   given int32: Int32.type = Int32
   given int64: Int64.type = Int64
+  given uint8: UInt8.type = UInt8
+  given uint16: UInt16.type = UInt16
+  given uint32: UInt32.type = UInt32
+  given uint64: UInt64.type = UInt64
   given float32: Float32.type = Float32
   given float64: Float64.type = Float64
   given complex128: ComplexDType = Complex128
@@ -387,7 +447,8 @@ object DType:
   def of[T](using d: DType[T]): DType[T] = d
 
   /** All built-in dtypes. */
-  val all: Seq[DType[?]] = Seq(Bool, Int8, Int16, Int32, Int64, Float32, Float64, Complex128, Str)
+  val all: Seq[DType[?]] =
+    Seq(Bool, Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32, Float64, Complex128, Str)
 
   /** Looks a dtype up by NumPy name or type code (`"float64"`, `"f8"`, `"int"`, `"complex"`, ...). */
   def byName(n: String): DType[?] = n.trim.stripPrefix("<").stripPrefix("|").stripPrefix("=") match
@@ -396,20 +457,45 @@ object DType:
     case "int16" | "i2" | "h" | "short" => Int16
     case "int32" | "i4" | "i" | "intc" => Int32
     case "int64" | "i8" | "l" | "q" | "int" | "intp" | "long" | "longlong" => Int64
+    case "uint8" | "u1" | "B" | "ubyte" => UInt8
+    case "uint16" | "u2" | "H" | "ushort" => UInt16
+    case "uint32" | "u4" | "I" | "uintc" => UInt32
+    case "uint64" | "u8" | "L" | "Q" | "uint" | "uintp" | "ulong" | "ulonglong" => UInt64
     case "float32" | "f4" | "f" | "single" => Float32
     case "float64" | "f8" | "d" | "float" | "double" => Float64
     case "complex128" | "c16" | "D" | "complex" | "cdouble" => Complex128
     case s if s == "str" || s == "U" || s.startsWith("U") || s == "str_" => Str
     case other => throw new IllegalArgumentException(s"data type '$other' not understood")
 
-  /** NumPy-style type promotion of two dtypes (`np.result_type`). */
+  /** NumPy-style type promotion of two dtypes (`np.result_type` / `np.promote_types`). */
   def promote(a: DType[?], b: DType[?]): DType[?] =
     if a eq b then a
     else if a.isString || b.isString then
       throw new IllegalArgumentException(s"cannot promote $a and $b")
     else
-      val rank = Seq[DType[?]](Bool, Int8, Int16, Int32, Int64, Float32, Float64, Complex128)
-      val (lo, hi) = if rank.indexOf(a) <= rank.indexOf(b) then (a, b) else (b, a)
-      if hi eq Complex128 then Complex128
-      else if (hi eq Float32) && ((lo eq Int32) || (lo eq Int64)) then Float64
-      else hi
+      def bits(d: DType[?]): Int = d.itemSize * 8
+      (a.kind, b.kind) match
+        case ('c', _) | (_, 'c') => Complex128
+        case ('b', _) => b
+        case (_, 'b') => a
+        case ('f', 'f') => if bits(a) >= bits(b) then a else b
+        case ('f', _) => floatFor(a, b)
+        case (_, 'f') => floatFor(b, a)
+        case (ka, kb) if ka == kb => if bits(a) >= bits(b) then a else b
+        case ('u', 'i') => mixedInt(a, b)
+        case _ => mixedInt(b, a)
+
+  /** float dtype `f` combined with integer dtype `i`. */
+  private def floatFor(f: DType[?], i: DType[?]): DType[?] =
+    if f eq Float64 then Float64
+    else if i.itemSize <= 2 then Float32
+    else Float64
+
+  /** unsigned `u` combined with signed `s`. */
+  private def mixedInt(u: DType[?], s: DType[?]): DType[?] =
+    if s.itemSize > u.itemSize then s
+    else u.itemSize match
+      case 1 => Int16
+      case 2 => Int32
+      case 4 => Int64
+      case _ => Float64
