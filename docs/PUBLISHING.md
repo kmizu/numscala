@@ -21,6 +21,7 @@ What cannot live in the repository are the credentials. They are needed once.
 | `PGP_SECRET`, `PGP_PASSPHRASE` secrets | set |
 | `SONATYPE_USERNAME`, `SONATYPE_PASSWORD` secrets | set |
 | **0.1.0** | `com.github.kmizu:numscala_3:0.1.0`, package `com.github.kmizu.numscala` |
+| **0.1.1** | adds the backquoted floor-division operator ``a `//` b`` / ``a `//=` b`` |
 | superseded | `com.github.kmizu:num-scala_3:0.1.0` (package `numscala`) was published first under the old name. Maven Central artifacts cannot be deleted, so it remains available but is no longer maintained. |
 
 Releasing a new version is now just `git tag -a vX.Y.Z -m ... && git push origin vX.Y.Z`.
