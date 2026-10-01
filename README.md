@@ -82,6 +82,87 @@ val s: Long = i.sum()              // small ints accumulate in int64
 val m: Double = i.mean()
 ```
 
+## Modules
+
+Every sample below is checked by `src/test/scala/numscala/ReadmeSuite.scala`.
+
+```scala
+// numpy.linalg — LU/QR/SVD/eig implemented in pure Scala, float64 and complex128, batched
+val A = np.array(Seq(Seq(3.0, 1.0), Seq(1.0, 2.0)))
+np.linalg.solve(A, np.array(9.0, 8.0))      // array([2., 3.])
+val sv = np.linalg.svd(A)                     // sv.U, sv.S, sv.Vh
+np.linalg.eigh(A).eigenvalues
+np.einsum("ij,jk->ik", A, A)
+
+// numpy.fft — any length (Bluestein for non powers of two)
+np.fft.fft(np.array(0.0, 1.0, 0.0, -1.0))
+np.fft.rfft(signal); np.fft.fftfreq(4)
+
+// numpy.random — bit-for-bit identical streams to NumPy (PCG64, MT19937, SeedSequence, ...)
+val rng = np.random.default_rng(42)
+rng.random(3)                                 // 0.7739560485559633, 0.4388784397520523, ...
+rng.normal(0.0, 1.0, 1000)
+np.random.seed(0); np.random.rand(1)          // 0.5488135039273248, like NumPy
+
+// ufuncs with reduce / accumulate / outer / at / reduceat
+np.add.reduce(np.arange(5))                   // 10
+np.multiply.outer(np.array(1, 2), np.array(1, 2, 3))
+
+// statistics, sorting, sets
+np.median(x); np.percentile(x, 50.0); np.histogram(x, 10); np.cov(m)
+np.unique(x); np.argsort(x); np.searchsorted(x, v); np.where(c, x, y)
+
+// numpy.polynomial
+val p = np.polynomial.Polynomial.fit(xs, ys, 2)
+np.polyval(np.array(1.0, 0.0, -1.0), np.array(2.0))
+
+// numpy.ma
+val m = np.ma.masked_less(np.array(1.0, -2.0, 3.0), 0.0)
+println(m)                                    // [1.0 -- 3.0]
+m.mean()                                      // 2.0
+
+// numpy.strings / numpy.char
+np.strings.upper(np.array("ab", "cd"))
+
+// .npy / .npz files interoperate with NumPy byte-for-byte
+np.save("a.npy", A); np.load("a.npy", DType.Float64)
+np.savez("arrays.npz", "a" -> A); np.load_npz("arrays.npz")
+
+// numpy.testing
+np.testing.assert_allclose(actual, expected, rtol = 1e-7)
+```
+
+Also available: shape manipulation (`concatenate`, `stack`, `split`, `pad`, `tile`, `roll`, …),
+`np.lib.stride_tricks.sliding_window_view`, `np.emath`, `np.printoptions`, `finfo`/`iinfo`,
+window functions, `packbits`, `einsum`, and more — about 420 of the ~425 public NumPy
+functions.
+
+## Differences from NumPy
+
+Scala is statically typed and has no `__getitem__` syntax, so a few things look different:
+
+* **Indexing.** `a(i, j)` with integers returns an element; anything else (`::`, slice strings
+  like `"1:-1"`, `Range`s, `None`, `---`, index arrays, masks) returns an array. A row of a
+  2-D array is `a(i, ::)`, not `a(i)`.
+* **Operators.** Elementwise equality is `===` / `=!=`; matrix product is `@@`;
+  floor division is `floorDiv`.
+* **Scalars promote like arrays.** `float32Array + 2.0` is float64 (NumPy treats Python
+  scalars as "weak"); use `np.array(2.0f)` to stay in float32.
+* **Index results are `NDArray[Int]`** (NumPy: int64), since JVM arrays are Int-indexed.
+* **Results that NumPy returns as scalars from per-matrix linalg functions** (`det`, `cond`,
+  `matrix_rank`) are 0-d arrays; `eig`/`eigvals` always return complex arrays.
+* **Not supported:** `datetime64`/`timedelta64`, `float16`/`complex64` dtypes (read from
+  `.npy` as float32/complex128), object and structured arrays, `np.matrix`, `memmap`,
+  pickled `.npy` content. `np.seterr` modes are recorded but floating-point errors are never
+  raised (computation follows IEEE like NumPy's `"ignore"`).
+
+## Performance
+
+Arrays are backed by primitive JVM arrays; hot paths (arithmetic on float64/int32/int64,
+reductions with NumPy's pairwise summation, sorting, matmul) use specialised loops. Generic
+dtypes go through boxed element access and are several times slower. Run
+`sbt "Test/runMain bench.Bench"` to measure on your machine.
+
 ## Building
 
 ```bash
