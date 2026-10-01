@@ -12,6 +12,17 @@ The build is ready for Maven Central through the **Sonatype Central Portal**
 
 What cannot live in the repository are the credentials. They are needed once.
 
+## Current status (2026-10-01)
+
+| Item | Status |
+|---|---|
+| GitHub repository `kmizu/num-scala` | created, CI green (JDK 17/21) |
+| Signing key | RSA 4096 `E0FA067379B91CFA168154C9C8BFC42B047CB4C1` (`C8BFC42B047CB4C1`), published to keyserver.ubuntu.com and keys.openpgp.org; passphrase kept locally in `~/.config/num-scala/pgp-passphrase` |
+| `PGP_SECRET`, `PGP_PASSPHRASE` secrets | set |
+| `SONATYPE_USERNAME`, `SONATYPE_PASSWORD` secrets | **to do** — Central Portal user token (step 2 below) |
+
+Until the Sonatype secrets exist, a pushed tag runs the tests and skips publishing with a warning.
+
 ## 1. Namespace
 
 `com.github.kmizu` must be a verified namespace of your Central Portal account
