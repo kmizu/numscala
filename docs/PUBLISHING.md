@@ -19,9 +19,10 @@ What cannot live in the repository are the credentials. They are needed once.
 | GitHub repository `kmizu/num-scala` | created, CI green (JDK 17/21) |
 | Signing key | RSA 4096 `E0FA067379B91CFA168154C9C8BFC42B047CB4C1` (`C8BFC42B047CB4C1`), published to keyserver.ubuntu.com and keys.openpgp.org; passphrase kept locally in `~/.config/num-scala/pgp-passphrase` |
 | `PGP_SECRET`, `PGP_PASSPHRASE` secrets | set |
-| `SONATYPE_USERNAME`, `SONATYPE_PASSWORD` secrets | **to do** — Central Portal user token (step 2 below) |
+| `SONATYPE_USERNAME`, `SONATYPE_PASSWORD` secrets | set |
+| **0.1.0** | released to Maven Central on 2026-10-01 (`com.github.kmizu:num-scala_3:0.1.0`) |
 
-Until the Sonatype secrets exist, a pushed tag runs the tests and skips publishing with a warning.
+Releasing a new version is now just `git tag -a vX.Y.Z -m ... && git push origin vX.Y.Z`.
 
 ## 1. Namespace
 
