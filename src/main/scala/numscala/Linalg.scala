@@ -799,6 +799,14 @@ object Linalg:
   def matmul[A, B](x1: NDArray[A], x2: NDArray[B])(using p: NumPromote[A, B]): NDArray[p.Out] =
     LinAlgCore.matmul(x1, x2)
 
+
+  /** `np.linalg.tensordot` (array-API alias of `np.tensordot`): sums over the last `axes` axes of `a` and the first of `b`. */
+  def tensordot[A, B](a: NDArray[A], b: NDArray[B], axes: Int = 2)(using p: NumPromote[A, B]): NDArray[p.Out] =
+    np.tensordot(a, b, axes)
+
+  /** `np.linalg.tensordot` over explicit axis lists. */
+  def tensordot[A, B](a: NDArray[A], b: NDArray[B], axes: (Seq[Int], Seq[Int]))(using p: NumPromote[A, B]): NDArray[p.Out] =
+    np.tensordot(a, b, axes)
   /** Outer product of two 1-D arrays (`np.linalg.outer`). */
   def outer[A, B](x1: NDArray[A], x2: NDArray[B])(using p: NumPromote[A, B]): NDArray[p.Out] =
     if x1.ndim != 1 || x2.ndim != 1 then

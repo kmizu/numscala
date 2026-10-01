@@ -96,3 +96,11 @@ class ExtrasSuite extends munit.FunSuite:
     assertEquals(r.toList, List(1L, 2L, 3L, 4L))
     java.nio.file.Files.delete(tmp)
   }
+
+class LinalgAliasSuite extends munit.FunSuite:
+  test("np.linalg.tensordot") {
+    val a = np.arange(24.0).reshape(2, 3, 4)
+    val b = np.arange(12.0).reshape(3, 4)
+    assertEquals(np.linalg.tensordot(a, b).toList, np.tensordot(a, b).toList)
+    assertEquals(np.linalg.tensordot(a, b, (Seq(1), Seq(0))).shape, Seq(2, 4, 4))
+  }

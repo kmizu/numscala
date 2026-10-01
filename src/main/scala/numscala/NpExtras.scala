@@ -29,6 +29,9 @@ trait NpExtras:
   /** `np.ufunc` as a type. */
   type ufunc = Ufunc[?]
 
+  /** The JVM is little-endian on every supported platform for array data written by num-scala. */
+  val little_endian: Boolean = java.nio.ByteOrder.nativeOrder() == java.nio.ByteOrder.LITTLE_ENDIAN
+
   val True_ : Boolean = true
   val False_ : Boolean = false
 
