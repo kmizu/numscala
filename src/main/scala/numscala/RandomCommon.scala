@@ -61,7 +61,7 @@ private[numscala] object RCommon:
     case a: NDArray[?] =>
       val src = a.asInstanceOf[NDArray[Any]]
       val d = src.dtype
-      NDArray.fromArray(src.toArray.map(x => d.toDouble(x)), src.shapeArr.clone())
+      src.map(x => d.toDouble(x))(using DType.Float64)
     case _: Seq[?] | _: Array[?] =>
       val buf = scala.collection.mutable.ArrayBuffer.empty[Any]
       flatten(p, buf)
@@ -75,7 +75,7 @@ private[numscala] object RCommon:
     case a: NDArray[?] =>
       val src = a.asInstanceOf[NDArray[Any]]
       val d = src.dtype
-      NDArray.fromArray(src.toArray.map(x => d.toLong(x)), src.shapeArr.clone())
+      src.map(x => d.toLong(x))(using DType.Int64)
     case _: Seq[?] | _: Array[?] =>
       val buf = scala.collection.mutable.ArrayBuffer.empty[Any]
       flatten(p, buf)

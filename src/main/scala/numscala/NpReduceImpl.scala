@@ -49,7 +49,7 @@ private[numscala] object NpReduceImpl:
     val d = a.dtype.asInstanceOf[DType[Any]]
     if d.isComplex then throw new IllegalArgumentException(s"$what must be real, got complex")
     if d.isString then throw new IllegalArgumentException(s"$what must be numeric, got str")
-    toDoubles(d, a.asInstanceOf[NDArray[Any]].toArray)
+    a.asInstanceOf[NDArray[Any]].astypeDyn(DType.Float64).asInstanceOf[NDArray[Double]].toArray
 
   /** Copies the non-NaN entries of `buf(0 until n)` into `dst`; returns their count. */
   def compactNonNaN[T](d: DType[T], buf: Array[T], n: Int, dst: Array[T]): Int =
