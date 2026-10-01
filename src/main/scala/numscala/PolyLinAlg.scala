@@ -17,7 +17,7 @@ private[numscala] object PolyLinAlg:
     val a = Array.ofDim[Double](n + 1, n + 1)
     for i <- 0 until n; j <- 0 until n do a(i + 1)(j + 1) = a0(i)(j)
     if a.exists(_.exists(x => x.isNaN || x.isInfinite)) then
-      throw new ArithmeticException("Array must not contain infs or NaNs")
+      throw new LinAlgError("Array must not contain infs or NaNs")
     balance(a, n)
     elmhes(a, n)
     for i <- 1 to n; j <- 1 to n if i > j + 1 do a(i)(j) = 0.0
@@ -154,7 +154,7 @@ private[numscala] object PolyLinAlg:
               wi(nn) = z
             nn -= 2
           else
-            if its == 60 * math.max(n, 1) then throw new ArithmeticException("Eigenvalues did not converge")
+            if its == 60 * math.max(n, 1) then throw new LinAlgError("Eigenvalues did not converge")
             if its > 0 && its % 10 == 0 then
               // exceptional shift
               t += x
@@ -244,7 +244,7 @@ private[numscala] object PolyLinAlg:
   def eigvalsComplex(a0: Array[Array[Complex]]): Array[Complex] =
     val n = a0.length
     if n == 0 then return Array.empty[Complex]
-    if a0.exists(_.exists(z => !z.isFinite)) then throw new ArithmeticException("Array must not contain infs or NaNs")
+    if a0.exists(_.exists(z => !z.isFinite)) then throw new LinAlgError("Array must not contain infs or NaNs")
     val a = a0.map(_.clone())
     balanceC(a, n)
     hessenbergC(a, n)
@@ -334,7 +334,7 @@ private[numscala] object PolyLinAlg:
       else
         iter += 1
         total += 1
-        if total > 100 * n then throw new ArithmeticException("Eigenvalues did not converge")
+        if total > 100 * n then throw new LinAlgError("Eigenvalues did not converge")
         val mu =
           if iter % 11 == 10 then h(hi)(hi) + Complex(cabs1(h(hi)(hi - 1)), 0.0) * 0.75
           else
@@ -393,7 +393,7 @@ private[numscala] object PolyLinAlg:
           if math.abs(e(m)) <= Eps * dd then stop = true else m += 1
         if m != l then
           iter += 1
-          if iter > 60 then throw new ArithmeticException("Eigenvalues did not converge")
+          if iter > 60 then throw new LinAlgError("Eigenvalues did not converge")
           var g = (d(l + 1) - d(l)) / (2.0 * e(l))
           var r = math.hypot(g, 1.0)
           g = d(m) - d(l) + e(l) / (g + sign(r, g))
@@ -535,7 +535,7 @@ private[numscala] object PolyLinAlg:
     for col <- 0 until n do
       var piv = col
       for i <- col + 1 until n do if math.abs(a(i)(col)) > math.abs(a(piv)(col)) then piv = i
-      if a(piv)(col) == 0.0 then throw new ArithmeticException("Singular matrix")
+      if a(piv)(col) == 0.0 then throw new LinAlgError("Singular matrix")
       if piv != col then
         val t = a(piv); a(piv) = a(col); a(col) = t
         val t2 = r(piv); r(piv) = r(col); r(col) = t2

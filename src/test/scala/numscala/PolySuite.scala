@@ -248,11 +248,11 @@ class PolySuite extends munit.FunSuite:
     val inv = PolyLinAlg.inv(Array(Array(4.0, 7.0), Array(2.0, 6.0)))
     assertEqualsDouble(inv(0)(0), 0.6, 1e-15)
     assertEqualsDouble(inv(1)(0), -0.2, 1e-15)
-    intercept[ArithmeticException](PolyLinAlg.inv(Array(Array(1.0, 2.0), Array(2.0, 4.0))))
+    intercept[LinAlgError](PolyLinAlg.inv(Array(Array(1.0, 2.0), Array(2.0, 4.0))))
     val big = PolyLinAlg.eigvalsComplex(Array.tabulate(6, 6)((i, j) => Complex(i + 2.0 * j, (i * j) % 3 - 1.0)))
     // trace is preserved
     val tr = (0 until 6).map(i => Complex(i + 2.0 * i, (i * i) % 3 - 1.0)).reduce(_ + _)
     assert((big.reduce(_ + _) - tr).abs < 1e-10)
-    intercept[ArithmeticException](PolyLinAlg.eigvalsReal(Array(Array(Double.NaN))))
+    intercept[LinAlgError](PolyLinAlg.eigvalsReal(Array(Array(Double.NaN))))
   }
 

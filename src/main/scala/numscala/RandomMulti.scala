@@ -224,7 +224,7 @@ private[numscala] object RandomLinalg:
     for j <- 0 until n do
       var s = a(j)(j)
       for k <- 0 until j do s -= l(j)(k) * l(j)(k)
-      if !(s > 0) then throw new ArithmeticException("Matrix is not positive definite")
+      if !(s > 0) then throw new LinAlgError("Matrix is not positive definite")
       val d = math.sqrt(s)
       l(j)(j) = d
       for i <- j + 1 until n do
