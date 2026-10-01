@@ -32,6 +32,12 @@ object np
   val random: NpRandom.type = NpRandom
   /** `numpy.lib` (`np.lib.stride_tricks.sliding_window_view`, ...). */
   val lib: Lib.type = Lib
+  /** `numpy.ma` (masked arrays). */
+  val ma: MA.type = MA
+  /** `numpy.strings` (vectorized string operations). */
+  val strings: Strings.type = Strings
+  /** `numpy.char` (legacy alias of `numpy.strings`). */
+  val char: Strings.type = Strings
   /** `numpy.testing`. */
   val testing: Testing.type = Testing
   /** `numpy.polynomial`. */
