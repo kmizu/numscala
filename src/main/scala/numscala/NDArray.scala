@@ -275,8 +275,8 @@ final class NDArray[T] private[numscala] (
       case Some(st) => view(ns, st, offset)
       case None => NDArray.fromArray(toArray, ns)
 
-  /** A 1-D view when possible, otherwise a copy (`a.ravel()`). */
-  def ravel(): NDArray[T] = reshapeArr(Array(size))
+  /** A 1-D view when the array is C-contiguous, otherwise a copy (`a.ravel()`, like NumPy). */
+  def ravel(): NDArray[T] = if isCContiguous then reshapeArr(Array(size)) else flatten()
   def ravel(order: Char): NDArray[T] =
     if order == 'F' then transpose().ravel() else ravel()
   /** Always a 1-D copy (`a.flatten()`). */
@@ -803,7 +803,14 @@ object NDArray:
           offs(b * nr + j) = base + remOffs(j)
           j += 1
         b += 1
-      val adjacent = advAxes.zip(advAxes.drop(1)).forall((x, y) => y == x + 1)
+      // like NumPy, advanced indices are adjacent only if no slice, Ellipsis (even an empty
+      // one) or newaxis separates them in the index expression
+      val isAdv = items0.map {
+        case _: Index.Take | _: Index.Mask | _: Index.At => true
+        case _ => false
+      }
+      val firstAdv = isAdv.indexOf(true)
+      val adjacent = isAdv.lastIndexOf(true) - firstAdv + 1 == isAdv.count(identity)
       val p0 = advAxes.head
       if adjacent && p0 > 0 then
         // move broadcast dims to the position of the first advanced index

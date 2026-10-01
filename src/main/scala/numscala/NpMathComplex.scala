@@ -28,7 +28,8 @@ private[numscala] object CMath:
   def pow(a: Complex, b: Complex): Complex =
     if b.re == 0.0 && b.im == 0.0 then Complex.One
     else if a.re == 0.0 && a.im == 0.0 then
-      if b.re > 0.0 && b.im == 0.0 then Complex.Zero else Complex(Double.NaN, Double.NaN)
+      // NumPy: 0 ** b is 0 when Re(b) > 0, otherwise nan+nanj
+      if b.re > 0.0 then Complex.Zero else Complex(Double.NaN, Double.NaN)
     else if b.im == 0.0 && b.re == math.rint(b.re) && math.abs(b.re) < 100.0 then
       val n = b.re.toInt
       if n == 1 then a
