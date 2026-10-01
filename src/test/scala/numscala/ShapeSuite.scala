@@ -524,7 +524,7 @@ class ShapeSuite extends munit.FunSuite:
     check(np.tile(s, 2), Seq(4), Seq("a", "b", "a", "b"))
     check(np.flip(s), Seq(2), Seq("b", "a"))
     // float32 and boolean
-    val f = np.arange(3.0).astype(DType.Float32)
+    val f = np.arange(3.0).astypeOf(DType.Float32)
     check(np.roll(f, 1), Seq(3), Seq(2.0f, 0.0f, 1.0f))
     check(np.concatenate(Seq(np.array(true, false), np.array(Seq(true)))), Seq(3), Seq(true, false, true))
     // linear_ramp on 2-D with per-axis end values
