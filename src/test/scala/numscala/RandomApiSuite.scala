@@ -351,9 +351,9 @@ class RandomApiSuite extends munit.FunSuite:
     checkMoments("logseries", g.logseries(0.5, n), 0.5 / (0.5 * math.log(2)), 0.5 / (0.25 * math.log(2)) - math.pow(1 / math.log(2), 2))
     checkMoments("integers", g.integers(0, 10, n), 4.5, 8.25)
     checkMoments("zipf", g.zipf(4.0, n), 1.0823232 / 1.0, 0.25, tol = 0.1)
-    checkMoments("standard_normal f32", g.standard_normal(n, DType.Float32).astype(DType.Float64), 0.0, 1.0)
-    checkMoments("standard_exponential f32", g.standard_exponential(n, DType.Float32, "zig").astype(DType.Float64), 1.0, 1.0)
-    checkMoments("standard_gamma f32", g.standard_gamma(0.5, n, DType.Float32).astype(DType.Float64), 0.5, 0.5)
+    checkMoments("standard_normal f32", g.standard_normal(n, DType.Float32).astypeOf(DType.Float64), 0.0, 1.0)
+    checkMoments("standard_exponential f32", g.standard_exponential(n, DType.Float32, "zig").astypeOf(DType.Float64), 1.0, 1.0)
+    checkMoments("standard_gamma f32", g.standard_gamma(0.5, n, DType.Float32).astypeOf(DType.Float64), 0.5, 0.5)
     val mv = g.multivariate_normal(Seq(1.0, -1.0), Seq(Seq(2.0, 0.6), Seq(0.6, 1.0)), 50000)
     val xs = mv(::, 0).toArray; val ys = mv(::, 1).toArray
     val mx = xs.sum / xs.length; val my = ys.sum / ys.length
