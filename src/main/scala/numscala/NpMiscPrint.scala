@@ -10,7 +10,7 @@ private[numscala] object NpMiscFloatFmt:
     */
   def shortestOf(x: Double, single: Boolean): JBigDecimal =
     val ax = math.abs(x)
-    val s = new JBigDecimal(if single then java.lang.Float.toString(ax.toFloat) else java.lang.Double.toString(ax))
+    val s = new JBigDecimal(Format.shortestDecimal(if single then ax.toFloat.toDouble else ax, single))
       .stripTrailingZeros()
     if s.precision() == 2 then
       val one = s.round(new MathContext(1, RoundingMode.HALF_EVEN))

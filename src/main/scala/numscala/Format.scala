@@ -67,6 +67,24 @@ object Format:
     val u = bd.unscaledValue().abs().toString
     (u, u.length - 1 - bd.scale())
 
+  /** The shortest decimal string that rounds back to `x` (as a double, or as a float when
+    * `single`), choosing the closest such string — Python's `repr` / NumPy's Dragon4 "unique"
+    * mode. Implemented here because `Double.toString` is only guaranteed shortest from JDK 19.
+    */
+  private[numscala] def shortestDecimal(x: Double, single: Boolean): String =
+    if x == 0.0 || x.isNaN || x.isInfinite then java.lang.Double.toString(x)
+    else
+      val exact = new JBigDecimal(x)
+      val maxP = if single then 9 else 17
+      var p = 1
+      var result: JBigDecimal = null
+      while result == null && p <= maxP do
+        val r = exact.round(new java.math.MathContext(p, RoundingMode.HALF_EVEN))
+        val back = if single then r.floatValue().toDouble else r.doubleValue()
+        if back == x then result = r
+        p += 1
+      (if result == null then exact else result).stripTrailingZeros().toString
+
   private def pyRepr(neg: Boolean, digits: String, exp: Int, sci: Boolean): String =
     val sign = if neg then "-" else ""
     if sci then
@@ -83,7 +101,7 @@ object Format:
     else if d.isInfinite then (if d > 0 then "inf" else "-inf")
     else if d == 0.0 then (if 1.0 / d < 0 then "-0.0" else "0.0")
     else
-      val (dig, e) = shortestDigits(java.lang.Double.toString(math.abs(d)))
+      val (dig, e) = shortestDigits(shortestDecimal(math.abs(d), single = false))
       pyRepr(d < 0, dig, e, e < -4 || e >= 16)
 
   /** Formats a float32 scalar with its own shortest representation; like NumPy, float32
@@ -94,12 +112,12 @@ object Format:
     else if f.isInfinite then (if f > 0 then "inf" else "-inf")
     else if f == 0.0f then (if 1.0f / f < 0 then "-0.0" else "0.0")
     else
-      val (dig, e) = shortestDigits(java.lang.Float.toString(math.abs(f)))
+      val (dig, e) = shortestDigits(shortestDecimal(math.abs(f).toDouble, single = true))
       val a = math.abs(f.toDouble)
       pyRepr(f < 0, dig, e, a >= 1e6 || a < 1e-4)
 
   private def shortestOf(d: Double, single: Boolean): String =
-    if single then java.lang.Float.toString(math.abs(d.toFloat)) else java.lang.Double.toString(math.abs(d))
+    shortestDecimal(math.abs(if single then d.toFloat.toDouble else d), single)
 
   /** The exact decimal value of |d| (of the float32 value when `single`). */
   private def exactOf(d: Double, single: Boolean): JBigDecimal =

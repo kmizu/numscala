@@ -26,9 +26,10 @@ lazy val root = (project in file("."))
   .settings(
     name := "num-scala",
     description := "A nearly complete port of NumPy (n-dimensional arrays, ufuncs, linalg, fft, random, ...) to Scala 3",
-    scalacOptions ++= Seq("-deprecation", "-feature", "-unchecked"),
+    scalacOptions ++= Seq("-deprecation", "-feature", "-unchecked", "-release", "17"),
     libraryDependencies += "org.scalameta" %% "munit" % "1.1.1" % Test,
-    Test / parallelExecution := true,
+    // suites share global state (np.random.seed, print options), so run them sequentially
+    Test / parallelExecution := false,
     Compile / doc / scalacOptions ++= Seq("-project", "num-scala"),
     pomIncludeRepository := { _ => false },
     Test / publishArtifact := false
