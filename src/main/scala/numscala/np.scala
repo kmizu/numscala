@@ -23,7 +23,8 @@ object np
       NpLinalgTop,
       NpPoly,
       NpIO,
-      NpMisc:
+      NpMisc,
+      NpExtras:
   /** `numpy.linalg`. */
   val linalg: Linalg.type = Linalg
   /** `numpy.fft`. */
