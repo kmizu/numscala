@@ -46,3 +46,16 @@ class UnsignedSuite extends munit.FunSuite:
     assertEquals(big.max().unsignedString, "18446744073709551615")
     assertEquals(np.array(-1).astype[UInt32].astype[Long].toList, List(4294967295L))
   }
+
+class UnsignedRandomSuite extends munit.FunSuite:
+  test("Generator.integers with unsigned dtypes") {
+    val rng = np.random.default_rng(42)
+    val u8 = rng.integers(0L, 256L, Seq(2000), DType.UInt8, false)
+    assertEquals(u8.dtype.name, "uint8")
+    val ints = u8.astype[Int].toArray
+    assert(ints.forall(v => v >= 0 && v < 256))
+    assert(ints.max > 200 && ints.min < 50)
+    val u32 = rng.integers(0L, 4000000000L, Seq(100), DType.UInt32, false)
+    assert(u32.astype[Long].toArray.forall(v => v >= 0 && v < 4000000000L))
+    intercept[IllegalArgumentException](rng.integers(0L, 257L, Seq(1), DType.UInt8, false))
+  }
