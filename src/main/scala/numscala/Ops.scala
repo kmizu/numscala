@@ -12,8 +12,7 @@ enum Arith:
     case Div =>
       d match
         case i: InexactDType[U] => i.div
-        case r: RealDType[U] => r.floorDiv
-        case _ => throw new UnsupportedOperationException("division")
+        case r: RealDType[U] @unchecked => r.floorDiv
 
 /** Ordering comparisons with IEEE semantics (any comparison involving NaN is false). */
 enum CmpOp:
