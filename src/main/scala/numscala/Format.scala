@@ -261,14 +261,14 @@ object Format:
         if axis + 1 == nd then fmt(a.getAt(idx)) else recurse(axis + 1, nextHanging, nextWidth)
       if n == 0 then return "[]"
       if axesLeft == 1 then
-        val elemWidth = currWidth - separator.replaceAll("\\s+$", "").length
+        val elemWidth = currWidth - math.max(separator.replaceAll("\\s+$", "").length, 1)
         var line = hanging
         for i <- 0 until leading do
           line = extendLine(s, line, elem(i), elemWidth, hanging) + separator
         if showSummary then line = extendLine(s, line, summaryInsert, elemWidth, hanging) + separator
         for i <- trailing until 1 by -1 do
           line = extendLine(s, line, elem(-i), elemWidth, hanging) + separator
-        line = extendLine(s, line, elem(-1), currWidth, hanging)
+        line = extendLine(s, line, elem(-1), elemWidth, hanging)
         s.append(line)
       else
         val lineSep = separator.replaceAll("\\s+$", "") + "\n" * (axesLeft - 1)
@@ -284,8 +284,8 @@ object Format:
     (d eq DType.Float64) || (d eq DType.Int64) || (d eq DType.Bool) || (d eq DType.Complex128)
 
   private[numscala] def str[T](a: NDArray[T]): String =
-    if a.size == 0 then
-      if a.ndim == 0 then "" else "[" * 1 + "]"
+    if a.ndim == 0 then a.dtype.format(a.item)
+    else if a.size == 0 then "[]"
     else formatArray(a, " ", "", 0)
 
   private[numscala] def repr[T](a: NDArray[T]): String =

@@ -102,8 +102,11 @@ object Complex:
       if c != 0 then c else Format.compareDouble(a.im, b.im)
 
   private[numscala] def format(c: Complex): String =
-    val r = Format.formatFloatShort(c.re)
-    val i = Format.formatFloatShort(math.abs(c.im))
+    def short(d: Double): String =
+      val t = Format.formatFloatShort(d)
+      if t.endsWith(".0") then t.dropRight(2) else t
+    val r = short(c.re)
+    val i = short(math.abs(c.im))
     val sign = if c.im < 0 || (c.im == 0.0 && 1.0 / c.im < 0) then "-" else "+"
     val iStr = if c.im.isNaN then "nan" else i
     if c.re == 0.0 && 1.0 / c.re > 0 then s"${if c.im < 0 then "-" else ""}${iStr}j"

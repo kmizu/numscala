@@ -8,23 +8,23 @@ trait NpCreation:
   /** Creates an array from a scalar or (nested) `Seq`/`Array`/`NDArray`:
     * `np.array(Seq(Seq(1.0, 2.0), Seq(3.0, 4.0)))`. A scalar gives a 0-d array.
     */
-  def array[A](a: A)(using n: Nested[A]): NDArray[n.Elem] =
+  def array[A, E](a: A)(using n: Nested[A, E]): NDArray[E] =
     val shape = n.shapeOf(a).toArray
     val out = n.dtype.newArray(Shape.size(shape))
     n.write(a, out, 0)
     NDArray.fromArray(out, shape)(using n.dtype)
 
   /** `np.array(1, 2, 3)` or `np.array(Seq(1, 2), Seq(3, 4))`: the arguments become the first axis. */
-  def array[A](x0: A, x1: A, rest: A*)(using n: Nested[A]): NDArray[n.Elem] =
-    array[Seq[A]](Seq(x0, x1) ++ rest)(using Nested.seq[A](using n))
+  def array[A, E](x0: A, x1: A, rest: A*)(using n: Nested[A, E]): NDArray[E] =
+    array[Seq[A], E](Seq(x0, x1) ++ rest)(using Nested.seq[A, E](using n))
 
   /** Converts to an array without copying if `a` already is one (`np.asarray`). */
-  def asarray[A](a: A)(using n: Nested[A]): NDArray[n.Elem] = a match
-    case arr: NDArray[?] => arr.asInstanceOf[NDArray[n.Elem]]
+  def asarray[A, E](a: A)(using n: Nested[A, E]): NDArray[E] = a match
+    case arr: NDArray[?] => arr.asInstanceOf[NDArray[E]]
     case _ => array(a)
 
   /** Array from data converted to a dtype: `np.arrayOf(Seq(1, 2), DType.Float64)` (`np.array(x, dtype=...)`). */
-  def arrayOf[A, U](a: A, dtype: DType[U])(using n: Nested[A]): NDArray[U] = array(a).asType(using dtype)
+  def arrayOf[A, E, U](a: A, dtype: DType[U])(using n: Nested[A, E]): NDArray[U] = array(a).asType(using dtype)
 
   def ascontiguousarray[T](a: NDArray[T]): NDArray[T] = if a.ndim == 0 then a.reshape(1) else a.contiguous
   def asfortranarray[T](a: NDArray[T]): NDArray[T] = a.copy()

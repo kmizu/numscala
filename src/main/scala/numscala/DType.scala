@@ -15,9 +15,12 @@ import scala.reflect.ClassTag
   *  - [[FloatDType]]     : real floats (`floating`)
   *  - [[ComplexDType]]   : complex (`complexfloating`)
   */
-sealed abstract class DType[T](val name: String, val kind: Char, val itemSize: Int)(using
-    val classTag: ClassTag[T]
-):
+sealed trait DType[T]:
+  def name: String
+  /** NumPy kind character: 'b' bool, 'i' integer, 'f' float, 'c' complex, 'U' string. */
+  def kind: Char
+  def itemSize: Int
+  def classTag: ClassTag[T]
   def zero: T
   def one: T
   def fromBoolean(b: Boolean): T
@@ -71,9 +74,13 @@ sealed abstract class DType[T](val name: String, val kind: Char, val itemSize: I
 
   override def toString: String = name
 
+/** Common constructor-parameter carrier for the concrete dtypes. */
+sealed abstract class DTypeBase[T](val name: String, val kind: Char, val itemSize: Int)(using
+    val classTag: ClassTag[T]
+) extends DType[T]
+
 /** Numbers: integers, floats and complex. */
-sealed abstract class NumDType[T](name: String, kind: Char, itemSize: Int)(using ClassTag[T])
-    extends DType[T](name, kind, itemSize):
+sealed trait NumDType[T] extends DType[T]:
   def plus(x: T, y: T): T
   def minus(x: T, y: T): T
   def times(x: T, y: T): T
@@ -86,8 +93,7 @@ sealed abstract class NumDType[T](name: String, kind: Char, itemSize: Int)(using
   def fromInt(i: Int): T = fromLong(i.toLong)
 
 /** Ordered numbers (integers and floats). */
-sealed abstract class RealDType[T](name: String, kind: Char, itemSize: Int)(using ClassTag[T])
-    extends NumDType[T](name, kind, itemSize):
+sealed trait RealDType[T] extends NumDType[T]:
   def abs(x: T): T
   def lt(x: T, y: T): Boolean = compare(x, y) < 0
   def max(x: T, y: T): T
@@ -101,7 +107,7 @@ sealed abstract class RealDType[T](name: String, kind: Char, itemSize: Int)(usin
   def maxValue: T
 
 sealed abstract class IntDType[T](name: String, itemSize: Int)(using ClassTag[T])
-    extends RealDType[T](name, 'i', itemSize):
+    extends DTypeBase[T](name, 'i', itemSize), RealDType[T]:
   def bits: Int = itemSize * 8
   def and(x: T, y: T): T = fromLong(toLong(x) & toLong(y))
   def or(x: T, y: T): T = fromLong(toLong(x) | toLong(y))
@@ -154,8 +160,7 @@ sealed abstract class IntDType[T](name: String, itemSize: Int)(using ClassTag[T]
     case _ => fromLong(src.toLong(x))
 
 /** Floats and complex numbers. */
-sealed abstract class InexactDType[T](name: String, kind: Char, itemSize: Int)(using ClassTag[T])
-    extends NumDType[T](name, kind, itemSize):
+sealed trait InexactDType[T] extends NumDType[T]:
   def div(x: T, y: T): T
   def reciprocal(x: T): T = div(one, x)
   /** Applies a mathematical function: `f` for real dtypes, `fc` for complex. */
@@ -170,7 +175,7 @@ sealed abstract class InexactDType[T](name: String, kind: Char, itemSize: Int)(u
   def realDType: FloatDType[?]
 
 sealed abstract class FloatDType[T](name: String, itemSize: Int)(using ClassTag[T])
-    extends InexactDType[T](name, 'f', itemSize):
+    extends DTypeBase[T](name, 'f', itemSize), RealDType[T], InexactDType[T]:
   def plus(x: T, y: T): T = fromDouble(toDouble(x) + toDouble(y))
   def minus(x: T, y: T): T = fromDouble(toDouble(x) - toDouble(y))
   def times(x: T, y: T): T = fromDouble(toDouble(x) * toDouble(y))
@@ -222,7 +227,7 @@ sealed abstract class FloatDType[T](name: String, itemSize: Int)(using ClassTag[
   def eps: Double
   def tiny: Double
 
-final class ComplexDType private[numscala] () extends InexactDType[Complex]("complex128", 'c', 16):
+final class ComplexDType private[numscala] () extends DTypeBase[Complex]("complex128", 'c', 16), InexactDType[Complex]:
   def zero: Complex = Complex.Zero
   def one: Complex = Complex.One
   def plus(x: Complex, y: Complex): Complex = x + y
@@ -258,7 +263,7 @@ private[numscala] final class NaNLastOrdering[T](toD: T => Double) extends Order
   def compare(a: T, b: T): Int = Format.compareDouble(toD(a), toD(b))
 
 object DType:
-  object Bool extends DType[Boolean]("bool", 'b', 1):
+  object Bool extends DTypeBase[Boolean]("bool", 'b', 1):
     def zero = false
     def one = true
     def fromBoolean(b: Boolean): Boolean = b
@@ -353,7 +358,7 @@ object DType:
 
   val Complex128: ComplexDType = new ComplexDType()
 
-  object Str extends DType[String]("str", 'U', 0):
+  object Str extends DTypeBase[String]("str", 'U', 0):
     def zero = ""
     def one = "1"
     def fromBoolean(b: Boolean): String = if b then "True" else "False"
