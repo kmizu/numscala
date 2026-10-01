@@ -118,7 +118,7 @@ object Strings:
 
   private def opt(v: Long): Option[Long] = if v == NoneVal then None else Some(v)
 
-  private def map1[U](a: StrLike)(f: String => U)(using DType[U]): NDArray[U] = sa(a).map(f)
+  private def map1[U](a: StrLike)(f: String => U)(using ev: DType[U]): NDArray[U] = sa(a).map(f)
 
   /** Elementwise `f` over four broadcast arrays. */
   private def map4[A, B, C, D, U](a: NDArray[A], b: NDArray[B], c: NDArray[C], d: NDArray[D])(

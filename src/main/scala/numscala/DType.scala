@@ -107,7 +107,7 @@ sealed trait RealDType[T] extends NumDType[T]:
   def minValue: T
   def maxValue: T
 
-sealed abstract class IntDType[T](name: String, itemSize: Int, val signed: Boolean = true)(using ClassTag[T])
+sealed abstract class IntDType[T](name: String, itemSize: Int, val signed: Boolean = true)(using ev: ClassTag[T])
     extends DTypeBase[T](name, if signed then 'i' else 'u', itemSize), RealDType[T]:
   def bits: Int = itemSize * 8
   def and(x: T, y: T): T = fromLong(toLong(x) & toLong(y))
@@ -175,7 +175,7 @@ sealed trait InexactDType[T] extends NumDType[T]:
   /** The real dtype of the same precision (`float64` for `complex128`). */
   def realDType: FloatDType[?]
 
-sealed abstract class FloatDType[T](name: String, itemSize: Int)(using ClassTag[T])
+sealed abstract class FloatDType[T](name: String, itemSize: Int)(using ev: ClassTag[T])
     extends DTypeBase[T](name, 'f', itemSize), RealDType[T], InexactDType[T]:
   def plus(x: T, y: T): T = fromDouble(toDouble(x) + toDouble(y))
   def minus(x: T, y: T): T = fromDouble(toDouble(x) - toDouble(y))

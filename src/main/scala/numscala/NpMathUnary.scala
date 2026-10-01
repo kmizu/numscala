@@ -8,12 +8,12 @@ trait NpMathUnary:
   // ------------------------------------------------------------------ arithmetic
 
   /** Numerical negative (`np.negative`). */
-  def negative[T](x: NDArray[T])(using NumDType[T]): NDArray[T] =
+  def negative[T](x: NDArray[T])(using ev: NumDType[T]): NDArray[T] =
     mapSame(x, "negative")(i = v => -v, f = v => -v, c = z => -z)
   def negative(x: Double): Double = -x
 
   /** Numerical positive, a copy (`np.positive`). */
-  def positive[T](x: NDArray[T])(using NumDType[T]): NDArray[T] = x.copy()
+  def positive[T](x: NDArray[T])(using ev: NumDType[T]): NDArray[T] = x.copy()
   def positive(x: Double): Double = x
 
   /** Absolute value; complex gives the modulus as float64 (`np.absolute`). */
@@ -35,7 +35,7 @@ trait NpMathUnary:
   def fabs(x: Double): Double = math.abs(x)
 
   /** Sign: -1, 0, 1 (NaN for NaN); `z/|z|` for complex (`np.sign`). */
-  def sign[T](x: NDArray[T])(using NumDType[T]): NDArray[T] =
+  def sign[T](x: NDArray[T])(using ev: NumDType[T]): NDArray[T] =
     mapSame(x, "sign")(
       i = v => java.lang.Long.signum(v).toLong,
       f = MathK.sign,
@@ -58,7 +58,7 @@ trait NpMathUnary:
   def reciprocal(x: Double): Double = 1.0 / x
 
   /** Elementwise square (`np.square`). */
-  def square[T](x: NDArray[T])(using NumDType[T]): NDArray[T] =
+  def square[T](x: NDArray[T])(using ev: NumDType[T]): NDArray[T] =
     mapSame(x, "square")(i = v => v * v, f = v => v * v, c = z => z * z)
   def square(x: Double): Double = x * x
 
@@ -213,28 +213,28 @@ trait NpMathUnary:
   // ------------------------------------------------------------------ rounding
 
   /** Floor; integer and bool inputs keep their dtype (`np.floor`). */
-  def floor[T](x: NDArray[T])(using RealDType[T]): NDArray[T] = mapSame(x, "floor")(i = v => v, f = math.floor)
+  def floor[T](x: NDArray[T])(using ev: RealDType[T]): NDArray[T] = mapSame(x, "floor")(i = v => v, f = math.floor)
   def floor(x: Double): Double = math.floor(x)
   /** Ceiling (`np.ceil`). */
-  def ceil[T](x: NDArray[T])(using RealDType[T]): NDArray[T] = mapSame(x, "ceil")(i = v => v, f = math.ceil)
+  def ceil[T](x: NDArray[T])(using ev: RealDType[T]): NDArray[T] = mapSame(x, "ceil")(i = v => v, f = math.ceil)
   def ceil(x: Double): Double = math.ceil(x)
   /** Truncation towards zero (`np.trunc`). */
-  def trunc[T](x: NDArray[T])(using RealDType[T]): NDArray[T] = mapSame(x, "trunc")(i = v => v, f = MathK.trunc)
+  def trunc[T](x: NDArray[T])(using ev: RealDType[T]): NDArray[T] = mapSame(x, "trunc")(i = v => v, f = MathK.trunc)
   def trunc(x: Double): Double = MathK.trunc(x)
   /** Round towards zero (`np.fix`). */
-  def fix[T](x: NDArray[T])(using RealDType[T]): NDArray[T] = mapSame(x, "fix")(i = v => v, f = MathK.fix)
+  def fix[T](x: NDArray[T])(using ev: RealDType[T]): NDArray[T] = mapSame(x, "fix")(i = v => v, f = MathK.fix)
   def fix(x: Double): Double = MathK.fix(x)
   /** Round to nearest integer, ties to even; ints give float64 (`np.rint`). */
   def rint[T](x: NDArray[T])(using t: ToInexact[T]): NDArray[t.Out] = mapInexact(x, t.dtype, "rint")(math.rint, CMath.rint)
   def rint(x: Double): Double = math.rint(x)
 
   /** Round to `decimals` places, ties to even (`np.round`). */
-  def round[T](a: NDArray[T], decimals: Int = 0)(using NumDType[T]): NDArray[T] = Ops.round(a, decimals)
+  def round[T](a: NDArray[T], decimals: Int = 0)(using ev: NumDType[T]): NDArray[T] = Ops.round(a, decimals)
   def round(x: Double): Double = math.rint(x)
   def round(x: Double, decimals: Int): Double = Ops.round(NDArray.scalar(x), decimals).item
   /** Alias of [[round]] (`np.around`). */
-  def around[T](a: NDArray[T], decimals: Int)(using NumDType[T]): NDArray[T] = Ops.round(a, decimals)
-  def around[T](a: NDArray[T])(using NumDType[T]): NDArray[T] = Ops.round(a, 0)
+  def around[T](a: NDArray[T], decimals: Int)(using ev: NumDType[T]): NDArray[T] = Ops.round(a, decimals)
+  def around[T](a: NDArray[T])(using ev: NumDType[T]): NDArray[T] = Ops.round(a, 0)
 
   // ------------------------------------------------------------------ predicates
 
@@ -278,11 +278,11 @@ trait NpMathUnary:
   // ------------------------------------------------------------------ bitwise
 
   /** Bitwise NOT of integers, logical NOT of bools (`np.bitwise_not`). */
-  def bitwise_not[T](x: NDArray[T])(using BitOps[T]): NDArray[T] = mapSame(x, "bitwise_not")(b = v => !v, i = v => ~v)
+  def bitwise_not[T](x: NDArray[T])(using ev: BitOps[T]): NDArray[T] = mapSame(x, "bitwise_not")(b = v => !v, i = v => ~v)
   /** Alias of [[bitwise_not]] (`np.invert`). */
-  def invert[T](x: NDArray[T])(using BitOps[T]): NDArray[T] = bitwise_not(x)
+  def invert[T](x: NDArray[T])(using ev: BitOps[T]): NDArray[T] = bitwise_not(x)
   /** Alias of [[bitwise_not]] (`np.bitwise_invert`). */
-  def bitwise_invert[T](x: NDArray[T])(using BitOps[T]): NDArray[T] = bitwise_not(x)
+  def bitwise_invert[T](x: NDArray[T])(using ev: BitOps[T]): NDArray[T] = bitwise_not(x)
   /** Number of 1-bits in the absolute value (`np.bitwise_count`; NumPy returns uint8, here int8). */
   def bitwise_count[T](x: NDArray[T])(using d: IntDType[T]): NDArray[Byte] =
     x.map(v => java.lang.Long.bitCount(math.abs(d.toLong(v))).toByte)

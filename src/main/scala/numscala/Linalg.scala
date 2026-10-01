@@ -19,7 +19,7 @@ object LinalgOut:
   private def make[T, O](d: InexactDType[O]): Aux[T, O] = new LinalgOut[T]:
     type Out = O
     val dtype: InexactDType[O] = d
-  given realOut[T](using RealDType[T]): Aux[T, Double] = make(DType.Float64)
+  given realOut[T](using ev: RealDType[T]): Aux[T, Double] = make(DType.Float64)
   given boolOut: Aux[Boolean, Double] = make(DType.Float64)
   given complexOut: Aux[Complex, Complex] = make(DType.Complex128)
 

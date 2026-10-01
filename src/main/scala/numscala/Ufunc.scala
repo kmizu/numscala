@@ -26,9 +26,9 @@ object FloatPowerOf:
     type Out = O
     val dtype: InexactDType[O] = d
   given cc: Aux[Complex, Complex, Complex] = make(DType.Complex128)
-  given cr[B](using RealDType[B]): Aux[Complex, B, Complex] = make(DType.Complex128)
-  given rc[A](using RealDType[A]): Aux[A, Complex, Complex] = make(DType.Complex128)
-  given rr[A, B](using RealDType[A], RealDType[B]): Aux[A, B, Double] = make(DType.Float64)
+  given cr[B](using ev: RealDType[B]): Aux[Complex, B, Complex] = make(DType.Complex128)
+  given rc[A](using ev: RealDType[A]): Aux[A, Complex, Complex] = make(DType.Complex128)
+  given rr[A, B](using ev0: RealDType[A], ev1: RealDType[B]): Aux[A, B, Double] = make(DType.Float64)
 
 /** Dtype resolution of a binary ufunc of kind `K` applied to inputs of types `A` and `B`:
   * the inputs are cast to `compute`, and the result has dtype `out`.
@@ -68,7 +68,7 @@ object UfuncReduce:
   given arith[T](using p: NumPromote[T, T]): Aux[UfuncKind.Arith, T, p.Out] = make(p.dtype)
   given div[T](using p: DivPromote[T, T]): Aux[UfuncKind.Div, T, p.Out] = make(p.dtype)
   given same[T](using p: Promote[T, T]): Aux[UfuncKind.Same, T, p.Out] = make(p.dtype)
-  given cmp[T](using DType[T]): Aux[UfuncKind.Cmp, T, Boolean] = make(DType.Bool)
+  given cmp[T](using ev: DType[T]): Aux[UfuncKind.Cmp, T, Boolean] = make(DType.Bool)
   given fpow[T](using p: FloatPowerOf[T, T]): Aux[UfuncKind.FPow, T, p.Out] = make(p.dtype)
 
 /** A binary universal function, the counterpart of a NumPy `ufunc` with two inputs.

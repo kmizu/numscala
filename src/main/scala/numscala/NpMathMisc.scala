@@ -87,11 +87,11 @@ trait NpMathMisc:
   def imag(x: Double): Double = 0.0
 
   /** Complex conjugate; a copy for real arrays (`np.conj`). */
-  def conj[T](x: NDArray[T])(using NumDType[T]): NDArray[T] =
+  def conj[T](x: NDArray[T])(using ev: NumDType[T]): NDArray[T] =
     if x.dtype.isComplex then x.asInstanceOf[NDArray[Complex]].map(_.conj).asInstanceOf[NDArray[T]] else x.copy()
   def conj(x: Complex): Complex = x.conj
   /** Alias of [[conj]] (`np.conjugate`). */
-  def conjugate[T](x: NDArray[T])(using NumDType[T]): NDArray[T] = conj(x)
+  def conjugate[T](x: NDArray[T])(using ev: NumDType[T]): NDArray[T] = conj(x)
   def conjugate(x: Complex): Complex = x.conj
 
   /** Counterclockwise angle from the positive real axis, in radians or degrees (`np.angle`). */
