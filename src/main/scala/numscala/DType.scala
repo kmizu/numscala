@@ -182,7 +182,7 @@ sealed abstract class FloatDType[T](name: String, itemSize: Int)(using ClassTag[
   def times(x: T, y: T): T = fromDouble(toDouble(x) * toDouble(y))
   def div(x: T, y: T): T = fromDouble(toDouble(x) / toDouble(y))
   def negate(x: T): T = fromDouble(-toDouble(x))
-  def power(x: T, y: T): T = fromDouble(math.pow(toDouble(x), toDouble(y)))
+  def power(x: T, y: T): T = fromDouble(FloatDType.pow(toDouble(x), toDouble(y)))
   def sign(x: T): T =
     val d = toDouble(x)
     if d.isNaN then x else fromDouble(math.signum(d))
@@ -190,22 +190,15 @@ sealed abstract class FloatDType[T](name: String, itemSize: Int)(using ClassTag[
   def liftD(f: Double => Double): T => T = x => fromDouble(f(toDouble(x)))
   def liftD2(f: (Double, Double) => Double): (T, T) => T = (x, y) => fromDouble(f(toDouble(x), toDouble(y)))
   def abs(x: T): T = fromDouble(math.abs(toDouble(x)))
+  // NumPy semantics: NaN propagates; on ties (e.g. -0.0 vs 0.0) the second operand wins
   def max(x: T, y: T): T =
     val a = toDouble(x); val b = toDouble(y)
-    if a.isNaN then x else if b.isNaN then y else if a >= b then x else y
+    if a.isNaN then x else if b.isNaN then y else if a > b then x else y
   def min(x: T, y: T): T =
     val a = toDouble(x); val b = toDouble(y)
-    if a.isNaN then x else if b.isNaN then y else if a <= b then x else y
-  def floorDiv(x: T, y: T): T =
-    val a = toDouble(x); val b = toDouble(y)
-    if b == 0.0 then fromDouble(if a == 0.0 || a.isNaN then Double.NaN else a / b)
-    else fromDouble(math.floor(a / b))
-  def mod(x: T, y: T): T =
-    val a = toDouble(x); val b = toDouble(y)
-    if b == 0.0 then nan
-    else
-      val r = a % b
-      fromDouble(if r != 0.0 && ((r < 0) != (b < 0)) then r + b else if r == 0.0 then math.copySign(0.0, b) else r)
+    if a.isNaN then x else if b.isNaN then y else if a < b then x else y
+  def floorDiv(x: T, y: T): T = fromDouble(FloatDType.divmod(toDouble(x), toDouble(y))._1)
+  def mod(x: T, y: T): T = fromDouble(FloatDType.divmod(toDouble(x), toDouble(y))._2)
   def fmod(x: T, y: T): T = fromDouble(toDouble(x) % toDouble(y))
   override def isNaN(x: T): Boolean = toDouble(x).isNaN
   def isInf(x: T): Boolean = toDouble(x).isInfinite
@@ -227,6 +220,28 @@ sealed abstract class FloatDType[T](name: String, itemSize: Int)(using ClassTag[
   /** Machine epsilon. */
   def eps: Double
   def tiny: Double
+
+object FloatDType:
+  /** C99 `pow` (unlike `Math.pow`, `pow(1, NaN) == 1`). */
+  def pow(x: Double, y: Double): Double = if x == 1.0 then 1.0 else math.pow(x, y)
+
+  /** NumPy's `npy_divmod`: (floor division, Python-style modulus). */
+  def divmod(a: Double, b: Double): (Double, Double) =
+    var mod = a % b
+    if b == 0.0 then (a / b, mod)
+    else
+      var div = (a - mod) / b
+      if mod != 0.0 then
+        if (b < 0) != (mod < 0) then
+          mod += b
+          div -= 1.0
+      else mod = math.copySign(0.0, b)
+      val fd =
+        if div != 0.0 then
+          val f = math.floor(div)
+          if div - f > 0.5 then f + 1.0 else f
+        else math.copySign(0.0, a / b)
+      (fd, mod)
 
 final class ComplexDType private[numscala] () extends DTypeBase[Complex]("complex128", 'c', 16), InexactDType[Complex]:
   def zero: Complex = Complex.Zero

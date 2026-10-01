@@ -69,7 +69,7 @@ private[numscala] object Ops:
     case Arith.Sub => loopD(a, b)(_ - _)
     case Arith.Mul => loopD(a, b)(_ * _)
     case Arith.Div => loopD(a, b)(_ / _)
-    case Arith.Pow => loopD(a, b)(math.pow)
+    case Arith.Pow => loopD(a, b)(FloatDType.pow)
 
   private inline def loopL(a: NDArray[Long], b: NDArray[Long])(inline f: (Long, Long) => Long): NDArray[Long] =
     val sh = Shape.broadcast(a.shapeArr, b.shapeArr)
