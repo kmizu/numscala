@@ -1,0 +1,3 @@
+package numscala
+
+object NpRandom

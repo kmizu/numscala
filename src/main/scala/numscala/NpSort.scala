@@ -1,0 +1,3 @@
+package numscala
+
+trait NpSort
