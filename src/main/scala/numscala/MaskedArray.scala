@@ -8,7 +8,7 @@ import scala.collection.immutable.ArraySeq
   */
 object MaskedConstant:
   /** `str(np.ma.masked)`. */
-  override def toString: String = "--"
+  override def toString: String = MA.masked_print_option.display()
   /** `repr(np.ma.masked)`. */
   def repr: String = "masked"
 
@@ -35,7 +35,7 @@ final class MaskedArray[T] private[numscala] (
     private[numscala] var _hard: Boolean
 ):
   if _mask != null && !java.util.Arrays.equals(_mask.shapeArr, _data.shapeArr) then
-    throw new IllegalArgumentException(
+    throw new MA.MaskError(
       s"Mask and data not compatible: data shape is ${Shape.str(_data.shapeArr)} and mask shape is ${Shape.str(_mask.shapeArr)}."
     )
 
@@ -481,7 +481,7 @@ object MaskedArray:
       try m.broadcastTo(shape.toIndexedSeq*).copy()
       catch
         case _: IllegalArgumentException =>
-          throw new IllegalArgumentException(
+          throw new MA.MaskError(
             s"Mask and data not compatible: data size is ${Shape.size(shape)}, mask size is ${m.size}."
           )
 

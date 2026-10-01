@@ -17,7 +17,7 @@ private[numscala] object MAFormat:
   /** Element strings of `a` (masked as `--`) in C order. */
   private def elementStrings[T](a: MaskedArray[T]): NDArray[String] =
     val d = a.dtype
-    NDArray.zipMap(a._data, a.maskArray)((x, m) => if m then "--" else pyRepr(d, x))(using DType.Str)
+    NDArray.zipMap(a._data, a.maskArray)((x, m) => if m then MA.masked_print_option.display() else pyRepr(d, x))(using DType.Str)
 
   /** NumPy's `_formatArray` for pre-formatted elements (object dtype: no padding). */
   def formatStrings(a: NDArray[String], separator: String, prefix: String, suffixLen: Int): String =
