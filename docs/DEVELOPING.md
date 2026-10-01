@@ -70,3 +70,6 @@ dtype ops: d.plus/minus/times/negate/power/sign (NumDType), d.abs/max/min/mod/fl
   tolerances `assertEqualsDouble(x, y, 1e-12)` for floats). Aim for >= 80% coverage.
 * Keep files under ~800 lines; split a module into several files if needed.
 * Scaladoc every public function in one or two lines, naming the NumPy equivalent.
+* Differential tests against NumPy: `python3 project/difftest/gen_difftest.py [seed] [scale]`
+  regenerates `src/test/resources/difftest/*.jsonl` (replayed by `DiffSuite`); run other seeds /
+  larger scales locally to hunt bugs, `project/difftest/show_case.py <category> <line>` shows a case.

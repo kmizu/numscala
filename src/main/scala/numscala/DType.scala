@@ -222,8 +222,9 @@ sealed abstract class FloatDType[T](name: String, itemSize: Int)(using ev: Class
   def tiny: Double
 
 object FloatDType:
-  /** C99 `pow` (unlike `Math.pow`, `pow(1, NaN) == 1`). */
-  def pow(x: Double, y: Double): Double = if x == 1.0 then 1.0 else math.pow(x, y)
+  /** C99 `pow` (unlike `Math.pow`, `pow(1, NaN) == 1` and `pow(-1, +-inf) == 1`). */
+  def pow(x: Double, y: Double): Double =
+    if x == 1.0 || (x == -1.0 && y.isInfinite) then 1.0 else math.pow(x, y)
 
   /** NumPy's `npy_divmod`: (floor division, Python-style modulus). */
   def divmod(a: Double, b: Double): (Double, Double) =

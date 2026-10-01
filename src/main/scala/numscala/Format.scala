@@ -67,9 +67,9 @@ object Format:
     val u = bd.unscaledValue().abs().toString
     (u, u.length - 1 - bd.scale())
 
-  private def pyRepr(neg: Boolean, digits: String, exp: Int): String =
+  private def pyRepr(neg: Boolean, digits: String, exp: Int, sci: Boolean): String =
     val sign = if neg then "-" else ""
-    if exp < -4 || exp >= 16 then
+    if sci then
       val mant = if digits.length == 1 then digits else s"${digits.head}.${digits.tail}"
       val es = if exp < 0 then f"-${-exp}%02d" else f"+$exp%02d"
       s"$sign${mant}e$es"
@@ -84,27 +84,39 @@ object Format:
     else if d == 0.0 then (if 1.0 / d < 0 then "-0.0" else "0.0")
     else
       val (dig, e) = shortestDigits(java.lang.Double.toString(math.abs(d)))
-      pyRepr(d < 0, dig, e)
+      pyRepr(d < 0, dig, e, e < -4 || e >= 16)
 
-  /** Formats a float32 scalar with its own shortest representation. */
+  /** Formats a float32 scalar with its own shortest representation; like NumPy, float32
+    * scalars switch to scientific notation from 1e6 on (and below 1e-4).
+    */
   def formatFloat32Short(f: Float): String =
     if f.isNaN then "nan"
     else if f.isInfinite then (if f > 0 then "inf" else "-inf")
     else if f == 0.0f then (if 1.0f / f < 0 then "-0.0" else "0.0")
     else
       val (dig, e) = shortestDigits(java.lang.Float.toString(math.abs(f)))
-      pyRepr(f < 0, dig, e)
+      val a = math.abs(f.toDouble)
+      pyRepr(f < 0, dig, e, a >= 1e6 || a < 1e-4)
 
   private def shortestOf(d: Double, single: Boolean): String =
     if single then java.lang.Float.toString(math.abs(d.toFloat)) else java.lang.Double.toString(math.abs(d))
 
-  /** Dragon4 positional formatting (unique, at most `precision` fraction digits, trim '.'). */
+  /** The exact decimal value of |d| (of the float32 value when `single`). */
+  private def exactOf(d: Double, single: Boolean): JBigDecimal =
+    new JBigDecimal(math.abs(if single then d.toFloat.toDouble else d))
+
+  /** Dragon4 positional formatting (unique, at most `precision` fraction digits, trim '.').
+    * Like Dragon4, digits beyond the shortest representation (cut off at `precision`, or
+    * required by `minDigits`) are those of the exact binary value, correctly rounded.
+    */
   private[numscala] def positional(d: Double, precision: Int, single: Boolean, minDigits: Int = 0): String =
     val neg = d < 0 || (d == 0.0 && 1.0 / d < 0)
     var bd = new JBigDecimal(shortestOf(d, single))
-    if bd.scale() > precision then bd = bd.setScale(precision, RoundingMode.HALF_EVEN)
+    if bd.scale() > precision then bd = exactOf(d, single).setScale(precision, RoundingMode.HALF_EVEN)
     bd = bd.stripTrailingZeros()
     if bd.scale() < 0 then bd = bd.setScale(0)
+    if bd.scale() < minDigits then
+      bd = exactOf(d, single).setScale(math.min(minDigits, precision), RoundingMode.HALF_EVEN)
     var s = bd.toPlainString
     if !s.contains('.') then s = s + "."
     val frac = s.length - s.indexOf('.') - 1
@@ -117,11 +129,15 @@ object Format:
     var (dig, e) =
       if d == 0.0 then ("0", 0)
       else shortestDigits(shortestOf(d, single))
-    if dig.length > precision + 1 then
-      val bd = new JBigDecimal(new java.math.BigInteger(dig), 0)
-        .round(new java.math.MathContext(precision + 1, RoundingMode.HALF_EVEN))
+    // digits beyond the shortest representation are those of the exact value (Dragon4)
+    val ndig =
+      if dig.length > precision + 1 then precision + 1
+      else if dig.length < minDigits + 1 then minDigits + 1
+      else 0
+    if ndig > 0 && d != 0.0 then
+      val bd = exactOf(d, single).round(new java.math.MathContext(ndig, RoundingMode.HALF_EVEN))
       val nd = bd.unscaledValue().toString
-      e += (nd.length - bd.scale()) - dig.length
+      e = nd.length - 1 - bd.scale()
       val stripped = nd.reverse.dropWhile(_ == '0').reverse
       dig = if stripped.isEmpty then "0" else stripped
     var frac = dig.tail
@@ -169,7 +185,8 @@ object Format:
       else
         val mx = absNonZero.max
         val mn = absNonZero.min
-        mx >= 1e8 || (!o.suppress && (mn < 0.0001 || mx / mn > 1000.0))
+        // NumPy >= 2.3: the cutoff is 10**min(8, finfo(dtype).precision), i.e. 1e6 for float32
+        mx >= (if single then 1e6 else 1e8) || (!o.suppress && (mn < 0.0001 || mx / mn > 1000.0))
     private var padL = 0
     private var padR = 0
     private var precision = o.precision
@@ -291,11 +308,20 @@ object Format:
     else if a.size == 0 then "[]"
     else formatArray(a, " ", "", 0)
 
+  /** `repr(a)`, like NumPy's `_array_repr_implementation` (`shape=`/`dtype=` extras). */
   private[numscala] def repr[T](a: NDArray[T]): String =
     val dtypeStr = if a.dtype.isString then "<U" + math.max(1, a.toSeq.map(x => a.dtype.format(x).length).maxOption.getOrElse(1)) else a.dtype.name
-    if a.size == 0 && a.ndim > 0 then
-      val shapePart = if a.ndim == 1 then "" else s"shape=${Shape.str(a.shapeArr)}, "
-      s"array([], ${shapePart}dtype=$dtypeStr)"
+    val prefix = "array("
+    val lst = if a.size == 0 && a.ndim > 0 then "[]" else formatArray(a, ", ", prefix, 1)
+    val extras = Seq(
+      Option.when((a.size == 0 && a.ndim != 1) || a.size > opts.threshold)(s"shape=${Shape.str(a.shapeArr)}"),
+      Option.when(!impliedDType(a.dtype) || a.size == 0)(
+        s"dtype=${if a.dtype.isString then "'" + dtypeStr + "'" else dtypeStr}")
+    ).flatten
+    if extras.isEmpty then prefix + lst + ")"
     else
-      val suffix = if impliedDType(a.dtype) then ")" else s", dtype=${if a.dtype.isString then "'" + dtypeStr + "'" else dtypeStr})"
-      "array(" + formatArray(a, ", ", "array(", suffix.length) + suffix
+      val arrStr = prefix + lst + ","
+      val extraStr = extras.mkString(", ") + ")"
+      val lastLineLen = arrStr.length - (arrStr.lastIndexOf('\n') + 1)
+      val spacer = if lastLineLen + extraStr.length + 1 > opts.linewidth then "\n" + " " * prefix.length else " "
+      arrStr + spacer + extraStr

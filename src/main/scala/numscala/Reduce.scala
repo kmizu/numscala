@@ -37,6 +37,9 @@ object Lanes:
       res(k) = f(buf, n)
       k += 1
     }
+    // like NumPy, reducing over an empty axis raises for reductions without an identity
+    // (`min`, `argmax`, ...) even when the result itself is empty
+    if n == 0 && res.length == 0 then f(buf, 0)
     val finalShape =
       if keepdims then (0 until a.ndim).map(i => if axSet(i) then 1 else a.shapeArr(i)).toArray
       else outShape

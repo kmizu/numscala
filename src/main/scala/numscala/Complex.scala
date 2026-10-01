@@ -9,16 +9,18 @@ final case class Complex(re: Double, im: Double):
   def -(o: Complex): Complex = Complex(re - o.re, im - o.im)
   def *(o: Complex): Complex = Complex(re * o.re - im * o.im, re * o.im + im * o.re)
   def /(o: Complex): Complex =
-    // Smith's algorithm for numerical robustness.
-    if o.im == 0.0 then Complex(re / o.re, im / o.re)
-    else if math.abs(o.re) >= math.abs(o.im) then
-      val r = o.im / o.re
-      val d = o.re + o.im * r
-      Complex((re + im * r) / d, (im - re * r) / d)
+    // Smith's algorithm, exactly as NumPy's complex divide loop (bit-identical results).
+    val ar = math.abs(o.re)
+    if ar >= math.abs(o.im) then
+      if ar == 0.0 && o.im == 0.0 then Complex(re / ar, im / ar)
+      else
+        val r = o.im / o.re
+        val scl = 1.0 / (o.re + o.im * r)
+        Complex((re + im * r) * scl, (im - re * r) * scl)
     else
       val r = o.re / o.im
-      val d = o.re * r + o.im
-      Complex((re * r + im) / d, (im * r - re) / d)
+      val scl = 1.0 / (o.im + o.re * r)
+      Complex((re * r + im) * scl, (im * r - re) * scl)
   def +(d: Double): Complex = Complex(re + d, im)
   def -(d: Double): Complex = Complex(re - d, im)
   def *(d: Double): Complex = Complex(re * d, im * d)
@@ -44,21 +46,8 @@ final case class Complex(re: Double, im: Double):
       val t = math.sqrt((math.abs(re) + abs) / 2.0)
       if re >= 0.0 then Complex(t, im / (2.0 * t))
       else Complex(math.abs(im) / (2.0 * t), math.copySign(t, im))
-  def pow(o: Complex): Complex =
-    if o.re == 0.0 && o.im == 0.0 then Complex.One
-    else if re == 0.0 && im == 0.0 then
-      if o.im == 0.0 && o.re > 0.0 then Complex.Zero else Complex(Double.NaN, Double.NaN)
-    else if o.im == 0.0 && o.re == math.rint(o.re) && math.abs(o.re) <= 64 then
-      // exact repeated multiplication for small integral exponents
-      var n = math.abs(o.re.toInt)
-      var base = this
-      var acc = Complex.One
-      while n > 0 do
-        if (n & 1) == 1 then acc = acc * base
-        base = base * base
-        n >>= 1
-      if o.re < 0 then Complex.One / acc else acc
-    else (log * o).exp
+  /** `this ** o` with NumPy's `npy_cpow` semantics (the same kernel as `np.power`). */
+  def pow(o: Complex): Complex = CMath.pow(this, o)
   def pow(d: Double): Complex = pow(Complex(d, 0.0))
 
   def sin: Complex = Complex(math.sin(re) * math.cosh(im), math.cos(re) * math.sinh(im))
