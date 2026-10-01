@@ -17,7 +17,7 @@ What cannot live in the repository are the credentials. They are needed once.
 | Item | Status |
 |---|---|
 | GitHub repository `kmizu/num-scala` | created, CI green (JDK 17/21) |
-| Signing key | RSA 4096 `E0FA067379B91CFA168154C9C8BFC42B047CB4C1` (`C8BFC42B047CB4C1`), published to keyserver.ubuntu.com and keys.openpgp.org; passphrase kept locally in `~/.config/num-scala/pgp-passphrase` |
+| Signing key | the maintainer's common release key, RSA 4096 `E0FA067379B91CFA168154C9C8BFC42B047CB4C1` (`Kota Mizushima <kmizu.main@gmail.com>`), on keyserver.ubuntu.com and keys.openpgp.org; passphrase kept locally in `~/.config/release-signing/pgp-passphrase` |
 | `PGP_SECRET`, `PGP_PASSPHRASE` secrets | set |
 | `SONATYPE_USERNAME`, `SONATYPE_PASSWORD` secrets | set |
 | **0.1.0** | released to Maven Central on 2026-10-01 (`com.github.kmizu:num-scala_3:0.1.0`) |
