@@ -1,4 +1,4 @@
-# num-scala
+# numscala
 
 **A nearly complete port of [NumPy](https://numpy.org) to Scala 3.**
 
@@ -9,13 +9,17 @@ set routines, `np.linalg`, `np.fft`, `np.random` (bit-compatible with NumPy's ge
 formatted exactly like NumPy's `str()`/`repr()`.
 
 ```scala
-libraryDependencies += "com.github.kmizu" %% "num-scala" % "0.1.0"
+libraryDependencies += "com.github.kmizu" %% "numscala" % "0.1.0"
 ```
 
 Requires Scala 3.3+ and Java 17+. No dependencies.
 
+> The library was first published as `"com.github.kmizu" %% "num-scala" % "0.1.0"` with
+> package `numscala`. That artifact stays on Maven Central (published artifacts cannot be
+> removed) but is superseded: use `numscala` and `import com.github.kmizu.numscala.*`.
+
 ```scala
-import numscala.*
+import com.github.kmizu.numscala.*
 
 val a = np.arange(12.0).reshape(3, 4)
 println(a)
@@ -40,11 +44,11 @@ b(0, ::) = 0.0           // assignment through a view       b[0, :] = 0
 b(b > 9.0) = -1.0        // masked assignment               b[b > 9] = -1
 ```
 
-## NumPy → num-scala cheat sheet
+## NumPy → numscala cheat sheet
 
-| NumPy | num-scala |
+| NumPy | numscala |
 |---|---|
-| `import numpy as np` | `import numscala.*` |
+| `import numpy as np` | `import com.github.kmizu.numscala.*` |
 | `np.array([[1, 2], [3, 4]])` | `np.array(Seq(Seq(1, 2), Seq(3, 4)))` or `np.array(Seq(1, 2), Seq(3, 4))` |
 | `np.array([1, 2], dtype=np.float32)` | `np.arrayOf(Seq(1, 2), DType.Float32)` |
 | `np.zeros((2, 3))`, `np.zeros(3, dtype=int)` | `np.zeros(2, 3)`, `np.zeros[Int](3)` |
@@ -84,7 +88,7 @@ val m: Double = i.mean()
 
 ## Modules
 
-Every sample below is checked by `src/test/scala/numscala/ReadmeSuite.scala`.
+Every sample below is checked by `src/test/scala/com/github/kmizu/numscala/ReadmeSuite.scala`.
 
 ```scala
 // numpy.linalg — LU/QR/SVD/eig implemented in pure Scala, float64 and complex128, batched
@@ -161,13 +165,13 @@ Scala is statically typed and has no `__getitem__` syntax, so a few things look 
 Arrays are backed by primitive JVM arrays; hot paths (arithmetic on float64/int32/int64,
 reductions with NumPy's pairwise summation, sorting, matmul) use specialised loops. Generic
 dtypes go through boxed element access and are several times slower. Run
-`sbt "Test/runMain bench.Bench"` to measure on your machine.
+`sbt "Test/runMain com.github.kmizu.numscala.bench.Bench"` to measure on your machine.
 
 ## Building
 
 ```bash
 sbt test                           # run the test suite
-sbt "Test/runMain bench.Bench"     # micro benchmarks
+sbt "Test/runMain com.github.kmizu.numscala.bench.Bench"     # micro benchmarks
 sbt publishLocal                   # install locally
 ```
 

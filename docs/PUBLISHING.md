@@ -1,9 +1,9 @@
-# Publishing num-scala to Maven Central
+# Publishing numscala to Maven Central
 
 The build is ready for Maven Central through the **Sonatype Central Portal**
 (<https://central.sonatype.com>) using [sbt-ci-release](https://github.com/sbt/sbt-ci-release):
 
-* coordinates: `com.github.kmizu` % `num-scala_3` (`"com.github.kmizu" %% "num-scala" % "<version>"`)
+* coordinates: `com.github.kmizu` % `numscala_3` (`"com.github.kmizu" %% "numscala" % "<version>"`)
 * version: derived from the git tag by sbt-dynver (`v0.1.0` → `0.1.0`; untagged commits are
   `-SNAPSHOT`s that go to the Central snapshot repository)
 * the POM carries everything Central requires (name, description, url, BSD-3-Clause
@@ -16,11 +16,12 @@ What cannot live in the repository are the credentials. They are needed once.
 
 | Item | Status |
 |---|---|
-| GitHub repository `kmizu/num-scala` | created, CI green (JDK 17/21) |
+| GitHub repository `kmizu/numscala` | renamed from `kmizu/num-scala` (old URLs redirect), CI green (JDK 17/21) |
 | Signing key | the maintainer's common release key, RSA 4096 `E0FA067379B91CFA168154C9C8BFC42B047CB4C1` (`Kota Mizushima <kmizu.main@gmail.com>`), on keyserver.ubuntu.com and keys.openpgp.org; passphrase kept locally in `~/.config/release-signing/pgp-passphrase` |
 | `PGP_SECRET`, `PGP_PASSPHRASE` secrets | set |
 | `SONATYPE_USERNAME`, `SONATYPE_PASSWORD` secrets | set |
-| **0.1.0** | released to Maven Central on 2026-10-01 (`com.github.kmizu:num-scala_3:0.1.0`) |
+| **0.1.0** | `com.github.kmizu:numscala_3:0.1.0`, package `com.github.kmizu.numscala` |
+| superseded | `com.github.kmizu:num-scala_3:0.1.0` (package `numscala`) was published first under the old name. Maven Central artifacts cannot be deleted, so it remains available but is no longer maintained. |
 
 Releasing a new version is now just `git tag -a vX.Y.Z -m ... && git push origin vX.Y.Z`.
 
@@ -60,7 +61,7 @@ In the repository settings (Secrets and variables → Actions) add:
 ## 5. Release
 
 ```bash
-git tag -a v0.1.0 -m "num-scala 0.1.0"
+git tag -a v0.1.0 -m "numscala 0.1.0"
 git push origin v0.1.0
 ```
 

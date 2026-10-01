@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Differential-test generator for num-scala.
+"""Differential-test generator for numscala.
 
 Produces randomized cases, evaluates them with NumPy (the oracle) and writes one JSON
 object per line to src/test/resources/difftest/<category>.jsonl.  The munit suite
-src/test/scala/numscala/DiffSuite.scala replays every case against num-scala.
+src/test/scala/com/github/kmizu/numscala/DiffSuite.scala replays every case against numscala.
 
 Run from the repository root:  python3 project/difftest/gen_difftest.py
 Deterministic for a given NumPy version (seeded); NumPy 2.4.2 was used.

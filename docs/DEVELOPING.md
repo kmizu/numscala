@@ -1,7 +1,7 @@
-# Developing num-scala
+# Developing numscala
 
-num-scala is a port of NumPy to Scala 3 (3.3 LTS). Package `numscala`; users write
-`import numscala.*` and call `np.xxx(...)`, mirroring `import numpy as np`.
+numscala is a port of NumPy to Scala 3 (3.3 LTS). Package `com.github.kmizu.numscala`; users write
+`import com.github.kmizu.numscala.*` and call `np.xxx(...)`, mirroring `import numpy as np`.
 
 Build: `sbt compile`, `sbt test` (munit). JDK 17+.
 
@@ -65,7 +65,7 @@ dtype ops: d.plus/minus/times/negate/power/sign (NumDType), d.abs/max/min/mod/fl
   ignore it). Errors throw `IllegalArgumentException` / `IndexOutOfBoundsException` /
   `ArithmeticException` (`numpy.linalg.LinAlgError` -> `LinAlgError`) with NumPy-like messages.
 * Indices returned by searching functions are `NDArray[Int]` (NumPy: intp).
-* Tests: munit, one suite per module in `src/test/scala/numscala/`, checking values
+* Tests: munit, one suite per module in `src/test/scala/com/github/kmizu/numscala/`, checking values
   against what NumPy returns (write the expected values from NumPy semantics; use
   tolerances `assertEqualsDouble(x, y, 1e-12)` for floats). Aim for >= 80% coverage.
 * Keep files under ~800 lines; split a module into several files if needed.
