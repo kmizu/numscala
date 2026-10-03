@@ -1,23 +1,39 @@
 package com.github.kmizu.numscala.cpu.vector25
 
 import com.github.kmizu.numscala.cpu.{MatrixF32, ScalarF32Kernels}
-import jdk.incubator.vector.{FloatVector, VectorMask, VectorOperators, VectorSpecies}
+import jdk.incubator.vector.{FloatVector, VectorMask}
 
 /** Float32 kernels on the JDK 25 Vector API (`FloatVector.SPECIES_PREFERRED`, FMA).
   *
   * Shares validation and the remaining kernels with [[ScalarF32Kernels]]. Rounding differs from the
-  * scalar path (FMA, lane-wise partial sums), within the contract's tolerances. GEMMs whose
+  * scalar path (FMA, lane-wise partial sums), within the contract's tolerances, but for a fixed
+  * backend instance and shape the result is reproducible: every reduction uses a fixed order that
+  * does not depend on JIT compilation (no `reduceLanes`). GEMMs whose
   * `m * n * k` is below `smallGemm` stay on the scalar loops; the threshold is fixed per instance.
   */
 class VectorF32Kernels(val smallGemm: Long) extends ScalarF32Kernels:
-  private val S: VectorSpecies[java.lang.Float] = FloatVector.SPECIES_PREFERRED
-  private val L: Int = S.length()
+  // static final (Java) fields: the JIT must see the species as a constant
+  import Species.{L, S}
 
   override def name: String = "vector25"
 
   override def describe: String = s"vector25 (species=${S}, lanes=$L, smallGemm=$smallGemm)"
 
   private inline def small(m: Int, n: Int, k: Int): Boolean = m.toLong * n * k < smallGemm
+
+  /** Sum of the lanes in lane order 0, 1, ..., L-1.
+    *
+    * `reduceLanes(ADD)` leaves the float addition order unspecified, and the interpreter and the C2
+    * intrinsic do differ, so results would change once a method gets JIT-compiled. Lane extraction and
+    * lanewise `fma` are exact, so this keeps each backend/shape run-to-run reproducible.
+    */
+  private inline def sumLanes(v: FloatVector): Float =
+    var s = v.lane(0)
+    var l = 1
+    while l < L do
+      s += v.lane(l)
+      l += 1
+    s
 
   // ------------------------------------------------------------------ GEMM
 
@@ -165,10 +181,10 @@ class VectorF32Kernels(val smallGemm: Long) extends ScalarF32Kernels:
           s1 = av.fma(FloatVector.fromArray(S, bd, b1 + kb, tail), s1)
           s2 = av.fma(FloatVector.fromArray(S, bd, b2 + kb, tail), s2)
           s3 = av.fma(FloatVector.fromArray(S, bd, b3 + kb, tail), s3)
-        cd(cr + j) += alpha * s0.reduceLanes(VectorOperators.ADD)
-        cd(cr + j + 1) += alpha * s1.reduceLanes(VectorOperators.ADD)
-        cd(cr + j + 2) += alpha * s2.reduceLanes(VectorOperators.ADD)
-        cd(cr + j + 3) += alpha * s3.reduceLanes(VectorOperators.ADD)
+        cd(cr + j) += alpha * sumLanes(s0)
+        cd(cr + j + 1) += alpha * sumLanes(s1)
+        cd(cr + j + 2) += alpha * sumLanes(s2)
+        cd(cr + j + 3) += alpha * sumLanes(s3)
         j += 4
       while j < n do
         val b0 = b.offset + j * b.rowStride
@@ -178,7 +194,7 @@ class VectorF32Kernels(val smallGemm: Long) extends ScalarF32Kernels:
           s0 = FloatVector.fromArray(S, ad, ar + p).fma(FloatVector.fromArray(S, bd, b0 + p), s0)
           p += L
         if kb < k then s0 = FloatVector.fromArray(S, ad, ar + kb, tail).fma(FloatVector.fromArray(S, bd, b0 + kb, tail), s0)
-        cd(cr + j) += alpha * s0.reduceLanes(VectorOperators.ADD)
+        cd(cr + j) += alpha * sumLanes(s0)
         j += 1
       i += 1
 
@@ -244,7 +260,7 @@ class VectorF32Kernels(val smallGemm: Long) extends ScalarF32Kernels:
         val v = FloatVector.fromArray(S, x.data, xi + j)
         acc = v.fma(v, acc)
         j += L
-      var s = acc.reduceLanes(VectorOperators.ADD)
+      var s = sumLanes(acc)
       while j < x.cols do
         val v = x.data(xi + j)
         s = Math.fma(v, v, s)
