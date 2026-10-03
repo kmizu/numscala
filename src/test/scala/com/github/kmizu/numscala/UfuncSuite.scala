@@ -28,8 +28,9 @@ class UfuncSuite extends munit.FunSuite with MathTestUtil:
     val ii: NDArray[Int] = np.add(np.array(1, 2), 3)
     assertEquals(ii.toList, List(4, 5))
     assertEquals(ii.dtype.name, "int32")
-    val ll: NDArray[Long] = np.add(np.array(1, 2), 3L)
-    assertEquals(ll.toList, List(4L, 5L))
+    // a Scala Long is a weak Python int (NEP 50): int32 + 3L stays int32
+    val ll: NDArray[Int] = np.add(np.array(1, 2), 3L)
+    assertEquals(ll.toList, List(4, 5))
     val left: NDArray[Int] = np.subtract(10, np.array(1, 2, 3))
     assertEquals(left.toList, List(9, 8, 7))
     val s: Double = np.add(1.0, 2.0)

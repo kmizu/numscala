@@ -415,18 +415,22 @@ final class NDArray[T] private[numscala] (
   /** NumPy's `a // b` (floor division); `//` alone would start a comment, so write `` a `//` b ``. */
   def `//`(o: NDArray[T])(using d: RealDType[T]): NDArray[T] = floorDiv(o)
 
-  def +(s: T)(using d: NumDType[T]): NDArray[T] = Ops.arith(this, NDArray.scalar(s), d, Arith.Add)
-  def -(s: T)(using d: NumDType[T]): NDArray[T] = Ops.arith(this, NDArray.scalar(s), d, Arith.Sub)
-  def *(s: T)(using d: NumDType[T]): NDArray[T] = Ops.arith(this, NDArray.scalar(s), d, Arith.Mul)
-  def /(s: T)(using t: ToInexact[T]): NDArray[t.Out] =
-    val od = t.dtype
-    val sv = od.castFrom(dtype, s)
-    map(x => od.div(od.castFrom(dtype, x), sv))(using od)
-  def **(s: T)(using d: NumDType[T]): NDArray[T] = Ops.arith(this, NDArray.scalar(s), d, Arith.Pow)
-  def %(s: T)(using d: RealDType[T]): NDArray[T] = map(x => d.mod(x, s))
+  // Scalar operands follow NEP 50: `Int`/`Long`/`Double`/`Complex`/`Boolean` scalars are
+  // "weak" like Python scalars (`float32Array + 2.0` stays float32), see `WeakPromote`.
+  private def weakScalar[S](s: S, w: WeakPromote[T, S]): NDArray[w.Out] = NDArray.scalar(w.lift(s))(using w.dtype)
+
+  def +[S](s: S)(using w: WeakPromote[T, S]): NDArray[w.Out] = Ops.arith(this, weakScalar(s, w), w.dtype, Arith.Add)
+  def -[S](s: S)(using w: WeakPromote[T, S]): NDArray[w.Out] = Ops.arith(this, weakScalar(s, w), w.dtype, Arith.Sub)
+  def *[S](s: S)(using w: WeakPromote[T, S]): NDArray[w.Out] = Ops.arith(this, weakScalar(s, w), w.dtype, Arith.Mul)
+  def /[S](s: S)(using w: WeakPromote[T, S])(using t: ToInexact[w.Out]): NDArray[t.Out] =
+    Ops.arith(this, weakScalar(s, w), t.dtype, Arith.Div)
+  def **[S](s: S)(using w: WeakPromote[T, S]): NDArray[w.Out] = Ops.arith(this, weakScalar(s, w), w.dtype, Arith.Pow)
+  def %[S](s: S)(using w: WeakPromote[T, S])(using r: RealDType[w.Out]): NDArray[w.Out] =
+    Ops.binary(this, weakScalar(s, w), r)(r.mod)
   def floorDiv(s: T)(using d: RealDType[T]): NDArray[T] = map(x => d.floorDiv(x, s))
   /** NumPy's `a // s` with a scalar: `` a `//` 2 ``. */
-  def `//`(s: T)(using d: RealDType[T]): NDArray[T] = floorDiv(s)
+  def `//`[S](s: S)(using w: WeakPromote[T, S])(using r: RealDType[w.Out]): NDArray[w.Out] =
+    Ops.binary(this, weakScalar(s, w), r)(r.floorDiv)
 
   def unary_-(using d: NumDType[T]): NDArray[T] = map(d.negate)
   def unary_+ : NDArray[T] = copy()
@@ -436,13 +440,19 @@ final class NDArray[T] private[numscala] (
   def -=(o: NDArray[T])(using d: NumDType[T]): Unit = Ops.inPlace(this, o)(d.minus)
   def *=(o: NDArray[T])(using d: NumDType[T]): Unit = Ops.inPlace(this, o)(d.times)
   def /=(o: NDArray[T])(using d: InexactDType[T]): Unit = Ops.inPlace(this, o)(d.div)
-  def +=(s: T)(using d: NumDType[T]): Unit = mapInPlace(d.plus(_, s))
-  def -=(s: T)(using d: NumDType[T]): Unit = mapInPlace(d.minus(_, s))
-  def *=(s: T)(using d: NumDType[T]): Unit = mapInPlace(d.times(_, s))
-  def /=(s: T)(using d: InexactDType[T]): Unit = mapInPlace(d.div(_, s))
+  // A scalar is accepted in place only when it does not change the dtype (NumPy's same_kind
+  // casting: `intArray += 2.5` is an error).
+  def +=[S](s: S)(using w: WeakPromote.Aux[T, S, T]): Unit = { val v = w.lift(s); mapInPlace(w.dtype.plus(_, v)) }
+  def -=[S](s: S)(using w: WeakPromote.Aux[T, S, T]): Unit = { val v = w.lift(s); mapInPlace(w.dtype.minus(_, v)) }
+  def *=[S](s: S)(using w: WeakPromote.Aux[T, S, T]): Unit = { val v = w.lift(s); mapInPlace(w.dtype.times(_, v)) }
+  def /=[S](s: S)(using w: WeakPromote.Aux[T, S, T])(using d: InexactDType[T]): Unit =
+    val v = w.lift(s)
+    mapInPlace(d.div(_, v))
   /** NumPy's `a //= b` (in-place floor division): `` a `//=` b ``. */
   def `//=`(o: NDArray[T])(using d: RealDType[T]): Unit = Ops.inPlace(this, o)(d.floorDiv)
-  def `//=`(s: T)(using d: RealDType[T]): Unit = mapInPlace(d.floorDiv(_, s))
+  def `//=`[S](s: S)(using w: WeakPromote.Aux[T, S, T])(using d: RealDType[T]): Unit =
+    val v = w.lift(s)
+    mapInPlace(d.floorDiv(_, v))
 
   // ------------------------------------------------------------------ comparison operators
 
@@ -461,6 +471,24 @@ final class NDArray[T] private[numscala] (
   def >=(s: T): NDArray[Boolean] = map(x => CmpOp.Ge.test(dtype, x, s))
   def ===(s: T): NDArray[Boolean] = map(x => dtype.equiv(x, s))
   def =!=(s: T): NDArray[Boolean] = map(x => !dtype.equiv(x, s))
+  // Comparisons with a weak scalar never overflow: `int8Array < 300` is all true, like NumPy.
+  def <[S](s: S)(using w: WeakPromote[T, S]): NDArray[Boolean] = weakCompare(s, w, CmpOp.Lt)
+  def <=[S](s: S)(using w: WeakPromote[T, S]): NDArray[Boolean] = weakCompare(s, w, CmpOp.Le)
+  def >[S](s: S)(using w: WeakPromote[T, S]): NDArray[Boolean] = weakCompare(s, w, CmpOp.Gt)
+  def >=[S](s: S)(using w: WeakPromote[T, S]): NDArray[Boolean] = weakCompare(s, w, CmpOp.Ge)
+  def ===[S](s: S)(using w: WeakPromote[T, S]): NDArray[Boolean] = weakEqual(s, w, true)
+  def =!=[S](s: S)(using w: WeakPromote[T, S]): NDArray[Boolean] = weakEqual(s, w, false)
+
+  private def weakCompare[S](s: S, w: WeakPromote[T, S], op: CmpOp): NDArray[Boolean] =
+    val dir = w.outOfRange(s)
+    if dir == 0 then Ops.compare(this, weakScalar(s, w), w.dtype, op)
+    else
+      val below = op == CmpOp.Lt || op == CmpOp.Le // every element is below a scalar above the range
+      NDArray.fillOf(DType.Bool, shapeArr.clone(), below == (dir > 0))
+
+  private def weakEqual[S](s: S, w: WeakPromote[T, S], eq: Boolean): NDArray[Boolean] =
+    if w.outOfRange(s) == 0 then Ops.equal(this, weakScalar(s, w), w.dtype, eq)
+    else NDArray.fillOf(DType.Bool, shapeArr.clone(), !eq)
 
   // ------------------------------------------------------------------ bitwise / logical operators
 
@@ -470,11 +498,21 @@ final class NDArray[T] private[numscala] (
   def &(s: T)(using b: BitOps[T]): NDArray[T] = map(b.and(_, s))
   def |(s: T)(using b: BitOps[T]): NDArray[T] = map(b.or(_, s))
   def ^(s: T)(using b: BitOps[T]): NDArray[T] = map(b.xor(_, s))
+  def &[S](s: S)(using w: WeakPromote[T, S])(using b: BitOps[w.Out]): NDArray[w.Out] =
+    Ops.binary(this, weakScalar(s, w), w.dtype)(b.and)
+  def |[S](s: S)(using w: WeakPromote[T, S])(using b: BitOps[w.Out]): NDArray[w.Out] =
+    Ops.binary(this, weakScalar(s, w), w.dtype)(b.or)
+  def ^[S](s: S)(using w: WeakPromote[T, S])(using b: BitOps[w.Out]): NDArray[w.Out] =
+    Ops.binary(this, weakScalar(s, w), w.dtype)(b.xor)
   def unary_~(using b: BitOps[T]): NDArray[T] = map(b.not)
   def <<(o: NDArray[T])(using d: IntDType[T]): NDArray[T] = Ops.binary(this, o, d)(d.shiftLeft)
   def >>(o: NDArray[T])(using d: IntDType[T]): NDArray[T] = Ops.binary(this, o, d)(d.shiftRight)
   def <<(s: T)(using d: IntDType[T]): NDArray[T] = map(d.shiftLeft(_, s))
   def >>(s: T)(using d: IntDType[T]): NDArray[T] = map(d.shiftRight(_, s))
+  def <<[S](s: S)(using w: WeakPromote[T, S])(using d: IntDType[w.Out]): NDArray[w.Out] =
+    Ops.binary(this, weakScalar(s, w), d)(d.shiftLeft)
+  def >>[S](s: S)(using w: WeakPromote[T, S])(using d: IntDType[w.Out]): NDArray[w.Out] =
+    Ops.binary(this, weakScalar(s, w), d)(d.shiftRight)
 
   // ------------------------------------------------------------------ linear algebra shortcuts
 

@@ -44,28 +44,52 @@ extension (s: Double)
   def /(c: Complex): Complex = Complex(s, 0.0) / c
   /** Imaginary literal: `2.0.j == Complex(0, 2)`. */
   def j: Complex = Complex(0.0, s)
-  def +[U](a: NDArray[U])(using d: InexactDType[U]): NDArray[U] = a.map(x => d.plus(d.fromDouble(s), x))
-  def -[U](a: NDArray[U])(using d: InexactDType[U]): NDArray[U] = a.map(x => d.minus(d.fromDouble(s), x))
-  def *[U](a: NDArray[U])(using d: InexactDType[U]): NDArray[U] = a.map(x => d.times(d.fromDouble(s), x))
-  def /[U](a: NDArray[U])(using d: InexactDType[U]): NDArray[U] = a.map(x => d.div(d.fromDouble(s), x))
-  def **[U](a: NDArray[U])(using d: InexactDType[U]): NDArray[U] = a.map(x => d.power(d.fromDouble(s), x))
+  def +[U](a: NDArray[U])(using w: WeakPromote[U, Double]): NDArray[w.Out] = ScalarLeft.arith(s, a, w, Arith.Add)
+  def -[U](a: NDArray[U])(using w: WeakPromote[U, Double]): NDArray[w.Out] = ScalarLeft.arith(s, a, w, Arith.Sub)
+  def *[U](a: NDArray[U])(using w: WeakPromote[U, Double]): NDArray[w.Out] = ScalarLeft.arith(s, a, w, Arith.Mul)
+  def /[U](a: NDArray[U])(using w: WeakPromote[U, Double])(using t: ToInexact[w.Out]): NDArray[t.Out] =
+    ScalarLeft.div(s, a, w, t)
+  def **[U](a: NDArray[U])(using w: WeakPromote[U, Double]): NDArray[w.Out] = ScalarLeft.arith(s, a, w, Arith.Pow)
   /** `` 7.0 `//` a `` (NumPy's `7.0 // a`). */
-  def `//`[U](a: NDArray[U])(using d: FloatDType[U]): NDArray[U] = a.map(x => d.floorDiv(d.fromDouble(s), x))
+  def `//`[U](a: NDArray[U])(using w: WeakPromote[U, Double])(using r: RealDType[w.Out]): NDArray[w.Out] =
+    ScalarLeft.floorDiv(s, a, w, r)
 
 extension (s: Int)
   def j: Complex = Complex(0.0, s.toDouble)
-  def +[U](a: NDArray[U])(using d: NumDType[U]): NDArray[U] = a.map(x => d.plus(d.fromInt(s), x))
-  def -[U](a: NDArray[U])(using d: NumDType[U]): NDArray[U] = a.map(x => d.minus(d.fromInt(s), x))
-  def *[U](a: NDArray[U])(using d: NumDType[U]): NDArray[U] = a.map(x => d.times(d.fromInt(s), x))
-  def /[U](a: NDArray[U])(using t: ToInexact[U]): NDArray[t.Out] =
-    val od = t.dtype
-    a.map(x => od.div(od.fromLong(s.toLong), od.castFrom(a.dtype, x)))(using od)
-  def **[U](a: NDArray[U])(using d: NumDType[U]): NDArray[U] = a.map(x => d.power(d.fromInt(s), x))
+  def +[U](a: NDArray[U])(using w: WeakPromote[U, Int]): NDArray[w.Out] = ScalarLeft.arith(s, a, w, Arith.Add)
+  def -[U](a: NDArray[U])(using w: WeakPromote[U, Int]): NDArray[w.Out] = ScalarLeft.arith(s, a, w, Arith.Sub)
+  def *[U](a: NDArray[U])(using w: WeakPromote[U, Int]): NDArray[w.Out] = ScalarLeft.arith(s, a, w, Arith.Mul)
+  def /[U](a: NDArray[U])(using w: WeakPromote[U, Int])(using t: ToInexact[w.Out]): NDArray[t.Out] =
+    ScalarLeft.div(s, a, w, t)
+  def **[U](a: NDArray[U])(using w: WeakPromote[U, Int]): NDArray[w.Out] = ScalarLeft.arith(s, a, w, Arith.Pow)
   /** `` 7 `//` a `` (NumPy's `7 // a`). */
-  def `//`[U](a: NDArray[U])(using d: RealDType[U]): NDArray[U] = a.map(x => d.floorDiv(d.fromLong(s.toLong), x))
+  def `//`[U](a: NDArray[U])(using w: WeakPromote[U, Int])(using r: RealDType[w.Out]): NDArray[w.Out] =
+    ScalarLeft.floorDiv(s, a, w, r)
+
+extension (s: Long)
+  def +[U](a: NDArray[U])(using w: WeakPromote[U, Long]): NDArray[w.Out] = ScalarLeft.arith(s, a, w, Arith.Add)
+  def -[U](a: NDArray[U])(using w: WeakPromote[U, Long]): NDArray[w.Out] = ScalarLeft.arith(s, a, w, Arith.Sub)
+  def *[U](a: NDArray[U])(using w: WeakPromote[U, Long]): NDArray[w.Out] = ScalarLeft.arith(s, a, w, Arith.Mul)
+  def /[U](a: NDArray[U])(using w: WeakPromote[U, Long])(using t: ToInexact[w.Out]): NDArray[t.Out] =
+    ScalarLeft.div(s, a, w, t)
+  def **[U](a: NDArray[U])(using w: WeakPromote[U, Long]): NDArray[w.Out] = ScalarLeft.arith(s, a, w, Arith.Pow)
+  /** `` 7L `//` a `` (NumPy's `7 // a`). */
+  def `//`[U](a: NDArray[U])(using w: WeakPromote[U, Long])(using r: RealDType[w.Out]): NDArray[w.Out] =
+    ScalarLeft.floorDiv(s, a, w, r)
 
 extension (s: Complex)
-  def +(a: NDArray[Complex]): NDArray[Complex] = a.map(x => s + x)
-  def -(a: NDArray[Complex]): NDArray[Complex] = a.map(x => s - x)
-  def *(a: NDArray[Complex]): NDArray[Complex] = a.map(x => s * x)
-  def /(a: NDArray[Complex]): NDArray[Complex] = a.map(x => s / x)
+  def +[U](a: NDArray[U])(using w: WeakPromote[U, Complex]): NDArray[w.Out] = ScalarLeft.arith(s, a, w, Arith.Add)
+  def -[U](a: NDArray[U])(using w: WeakPromote[U, Complex]): NDArray[w.Out] = ScalarLeft.arith(s, a, w, Arith.Sub)
+  def *[U](a: NDArray[U])(using w: WeakPromote[U, Complex]): NDArray[w.Out] = ScalarLeft.arith(s, a, w, Arith.Mul)
+  def /[U](a: NDArray[U])(using w: WeakPromote[U, Complex])(using t: ToInexact[w.Out]): NDArray[t.Out] =
+    ScalarLeft.div(s, a, w, t)
+  def **[U](a: NDArray[U])(using w: WeakPromote[U, Complex]): NDArray[w.Out] = ScalarLeft.arith(s, a, w, Arith.Pow)
+
+/** Scalar-on-the-left operators, with the scalar converted per NEP 50 (`WeakPromote`). */
+private[numscala] object ScalarLeft:
+  def arith[S, U](s: S, a: NDArray[U], w: WeakPromote[U, S], op: Arith): NDArray[w.Out] =
+    Ops.arith(NDArray.scalar(w.lift(s))(using w.dtype), a, w.dtype, op)
+  def div[S, U](s: S, a: NDArray[U], w: WeakPromote[U, S], t: ToInexact[w.Out]): NDArray[t.Out] =
+    Ops.arith(NDArray.scalar(w.lift(s))(using w.dtype), a, t.dtype, Arith.Div)
+  def floorDiv[S, U](s: S, a: NDArray[U], w: WeakPromote[U, S], r: RealDType[w.Out]): NDArray[w.Out] =
+    Ops.binary(NDArray.scalar(w.lift(s))(using w.dtype), a, r)(r.floorDiv)

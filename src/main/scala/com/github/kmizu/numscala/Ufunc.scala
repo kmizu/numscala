@@ -80,6 +80,37 @@ object UfuncReduce:
   * np.multiply.outer(x, y); np.maximum.accumulate(a); np.add.at(a, Seq(0, 0, 2), 1.0)
   * }}}
   */
+/** How a scalar operand `B` of a ufunc applied to an array of dtype `A` is converted: numeric
+  * scalars follow NEP 50 (`WeakPromote`), anything else (strings, ...) is used as is.
+  */
+trait UfuncScalar[A, B]:
+  type Out
+  def dtype: DType[Out]
+  def lift(b: B): Out
+  /** The scalar as a `Long` when it is a weak integer outside the range of `Out`. */
+  def outOfRangeLong(b: B): Option[Long]
+
+object UfuncScalar extends LowPriorityUfuncScalar:
+  type Aux[A, B, O] = UfuncScalar[A, B] { type Out = O }
+  given weak[A, B](using w: WeakPromote[A, B]): Aux[A, B, w.Out] = new UfuncScalar[A, B]:
+    type Out = w.Out
+    def dtype: DType[w.Out] = w.dtype
+    def lift(b: B): w.Out = w.lift(b)
+    def outOfRangeLong(b: B): Option[Long] =
+      if w.outOfRange(b) == 0 then None
+      else
+        b match
+          case i: Int => Some(i.toLong)
+          case l: Long => Some(l)
+          case _ => None
+
+trait LowPriorityUfuncScalar:
+  given asIs[A, B](using d: DType[B]): UfuncScalar.Aux[A, B, B] = new UfuncScalar[A, B]:
+    type Out = B
+    def dtype: DType[B] = d
+    def lift(b: B): B = b
+    def outOfRangeLong(b: B): Option[Long] = None
+
 abstract class Ufunc[K] private[numscala] (val name: String, identityValue: Any, val reorderable: Boolean):
   /** Number of inputs. */
   def nin: Int = 2
@@ -104,12 +135,18 @@ abstract class Ufunc[K] private[numscala] (val name: String, identityValue: Any,
   /** Elementwise application with broadcasting (`ufunc(a, b)`). */
   def apply[A, B](a: NDArray[A], b: NDArray[B])(using t: UfuncTypes[K, A, B]): NDArray[t.Out] =
     exec(a, b, t.compute, t.out)
-  /** Array and scalar. */
-  def apply[A, B](a: NDArray[A], b: B)(using db: DType[B], t: UfuncTypes[K, A, B]): NDArray[t.Out] =
-    exec(a, NDArray.scalar(b), t.compute, t.out)
-  /** Scalar and array. */
-  def apply[A, B](a: A, b: NDArray[B])(using da: DType[A], t: UfuncTypes[K, A, B]): NDArray[t.Out] =
-    exec(NDArray.scalar(a), b, t.compute, t.out)
+  /** Array and scalar; a numeric scalar is "weak" (NEP 50): `np.add(float32Array, 2.0)` is float32. */
+  def apply[A, B](a: NDArray[A], b: B)(using s: UfuncScalar[A, B])(using t: UfuncTypes[K, A, s.Out]): NDArray[t.Out] =
+    s.outOfRangeLong(b) match
+      case Some(v) if t.out == DType.Bool => // comparisons with an out-of-range int never overflow
+        exec(a, NDArray.scalar(v), DType.promote(a.dtype, DType.Int64), t.out)
+      case _ => exec(a, NDArray.scalar(s.lift(b))(using s.dtype), t.compute, t.out)
+  /** Scalar and array (the scalar is weak, as above). */
+  def apply[A, B](a: A, b: NDArray[B])(using s: UfuncScalar[B, A])(using t: UfuncTypes[K, s.Out, B]): NDArray[t.Out] =
+    s.outOfRangeLong(a) match
+      case Some(v) if t.out == DType.Bool =>
+        exec(NDArray.scalar(v), b, DType.promote(b.dtype, DType.Int64), t.out)
+      case _ => exec(NDArray.scalar(s.lift(a))(using s.dtype), b, t.compute, t.out)
   /** Two scalars: returns a scalar. */
   def apply[A, B](a: A, b: B)(using da: DType[A], db: DType[B], t: UfuncTypes[K, A, B]): t.Out =
     exec(NDArray.scalar(a), NDArray.scalar(b), t.compute, t.out).item

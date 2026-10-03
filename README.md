@@ -151,8 +151,14 @@ Scala is statically typed and has no `__getitem__` syntax, so a few things look 
 * **Operators.** Elementwise equality is `===` / `=!=`; matrix product is `@@`;
   floor division is ``a `//` b`` — backquoted, because a bare `//` starts a comment in Scala.
   It has the same precedence as `*` and `/`, like NumPy's `//`.
-* **Scalars promote like arrays.** `float32Array + 2.0` is float64 (NumPy treats Python
-  scalars as "weak"); use `np.array(2.0f)` to stay in float32.
+* **Scalars are "weak" like Python scalars (NEP 50).** A Scala `Boolean`, `Int`, `Long`,
+  `Double` or `Complex` scalar takes the array's dtype unless its kind is higher:
+  `float32Array + 2.0` is float32, `int8Array + 1` is int8, `int32Array + 2.5` is float64.
+  An int scalar outside the array's range throws `ArithmeticException` (NumPy's
+  `OverflowError`); comparisons never overflow (`int8Array < 300` is all true). `Byte`,
+  `Short`, `Float` and unsigned scalars act like NumPy scalars and promote normally. The
+  same rules apply to ufuncs (`np.add(float32Array, 2.0)`). A bool array plus an `Int` is
+  int32 (NumPy: int64), numscala's default integer.
 * **Index results are `NDArray[Int]`** (NumPy: int64), since JVM arrays are Int-indexed.
 * **Results that NumPy returns as scalars from per-matrix linalg functions** (`det`, `cond`,
   `matrix_rank`) are 0-d arrays; `eig`/`eigvals` always return complex arrays.

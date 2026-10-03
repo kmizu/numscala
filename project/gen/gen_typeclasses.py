@@ -74,6 +74,63 @@ for a in order:
         if a!=b:
             o=promote(a,b)
             w(f"  given n_{a}_{b}: Aux[{a}, {b}, {o}] = make({ref(o)})")
+weak = {"Boolean":"b","Int":"i","Long":"i","Double":"f","Complex":"c"}
+rank = {"b":0,"i":1,"u":1,"f":2,"c":3}
+bounds = {"Byte":("Byte.MinValue.toLong","Byte.MaxValue.toLong"),
+          "Short":("Short.MinValue.toLong","Short.MaxValue.toLong"),
+          "Int":("Int.MinValue.toLong","Int.MaxValue.toLong"),
+          "Long":("Long.MinValue","Long.MaxValue"),
+          "UInt8":("0L","255L"),"UInt16":("0L","65535L"),"UInt32":("0L","4294967295L"),
+          "UInt64":("0L","Long.MaxValue")}
+def weak_out(a,s):
+    """NEP 50: a weak scalar adopts the array dtype unless its kind is higher."""
+    return a if rank[kinds[a]]>=rank[weak[s]] else s
+w("""
+/** Result type of an operator between an array of dtype `A` and a Scala scalar of type `S`
+  * (NEP 50). `Boolean`, `Int`, `Long`, `Double` and `Complex` scalars behave like Python
+  * scalars ("weak"): they take the array's dtype unless their kind (bool < int < float <
+  * complex) is higher. Other scalar types (`Byte`, `Short`, `Float`, unsigned) behave like
+  * NumPy scalars and promote normally.
+  */
+trait WeakPromote[A, S]:
+  type Out
+  def dtype: NumDType[Out]
+  /** The scalar converted to `Out`; a weak integer that does not fit throws like NumPy's `OverflowError`. */
+  def lift(s: S): Out
+  /** `1` / `-1` when a weak integer scalar is above / below the range of `Out`, else `0`. */
+  def outOfRange(s: S): Int
+
+object WeakPromote:
+  type Aux[A, S, O] = WeakPromote[A, S] { type Out = O }
+  private def make[A, S, O](d: NumDType[O], src: DType[S]): Aux[A, S, O] = new WeakPromote[A, S]:
+    type Out = O
+    val dtype: NumDType[O] = d
+    def lift(s: S): O = d.castFrom(src, s)
+    def outOfRange(s: S): Int = 0
+  private def int[A, S, O](d: NumDType[O], toLong: S => Long, lo: Long, hi: Long): Aux[A, S, O] =
+    new WeakPromote[A, S]:
+      type Out = O
+      val dtype: NumDType[O] = d
+      def outOfRange(s: S): Int =
+        val v = toLong(s)
+        if v > hi then 1 else if v < lo then -1 else 0
+      def lift(s: S): O =
+        if outOfRange(s) != 0 then
+          throw new ArithmeticException(s"Python integer ${toLong(s)} out of bounds for ${d.name}")
+        d.fromLong(toLong(s))
+  given same[T](using d: NumDType[T]): Aux[T, T, T] = make(d, d)""")
+for a in order:
+    for s_ in order:
+        if a==s_: continue
+        if s_ in weak:
+            o=weak_out(a,s_)
+            if o==a and kinds[a] in "iu" and weak[s_]=="i":
+                lo,hi=bounds[a]
+                w(f"  given w_{a}_{s_}: Aux[{a}, {s_}, {o}] = int({ref(o)}, (x: {s_}) => x.toLong, {lo}, {hi})")
+                continue
+        else:
+            o=promote(a,s_)
+        w(f"  given w_{a}_{s_}: Aux[{a}, {s_}, {o}] = make({ref(o)}, {ref(s_)})")
 w("""
 /** Result type of true division (`/`) between two numeric dtypes: always inexact. */
 trait DivPromote[A, B]:
