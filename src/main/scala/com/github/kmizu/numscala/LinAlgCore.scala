@@ -40,6 +40,43 @@ private[numscala] object LinAlgCore:
     matmulD(a0, b0, p.dtype)
 
   def matmulD[A, B, U](a0: NDArray[A], b0: NDArray[B], d: NumDType[U]): NDArray[U] =
+    if d eq DType.Float32 then
+      val sel = cpu.F32Backend.default
+      return matmulF32(a0, b0, new cpu.Workspace(), sel.kernels).asInstanceOf[NDArray[U]]
+    val (a1, b1, batch, m, k, n) = matmulShapes(a0, b0)
+    val aB = a1.asType(using d).broadcastTo((batch ++ Array(m, k)).toSeq*).contiguous
+    val bB = b1.asType(using d).broadcastTo((batch ++ Array(k, n)).toSeq*).contiguous
+    val nb = Shape.size(batch)
+    // `contiguous` already produced C-order element runs starting at `offset`: no second copy
+    val ad = aB.data
+    val bd = bB.data
+    val a0ff = aB.offset
+    val b0ff = bB.offset
+    val out = d.newArray(nb * m * n)
+    (d: DType[?]) match
+      case DType.Float64 =>
+        val o = out.asInstanceOf[Array[Double]]
+        var t = 0
+        while t < nb do
+          gemmD(ad.asInstanceOf[Array[Double]], a0ff + t * m * k, bd.asInstanceOf[Array[Double]], b0ff + t * k * n, o, t * m * n, m, k, n)
+          t += 1
+      case _ =>
+        var t = 0
+        while t < nb do
+          gemmGeneric(d, ad, a0ff + t * m * k, bd, b0ff + t * k * n, out, t * m * n, m, k, n)
+          t += 1
+    NDArray.fromArray(out, resultShape(a0, b0, batch, m, n))(using d)
+
+  /** `np.matmul` with both operands promoted to Float32, on the Float32 kernels (NS-CPU-001 §5.2). */
+  private[numscala] def matmulF32(a0: NDArray[?], b0: NDArray[?], ws: cpu.Workspace, kernels: cpu.F32Kernels): NDArray[Float] =
+    val (a1, b1, batch, m, k, n) = matmulShapes(a0, b0)
+    val out = cpu.NDArrayF32Adapter.matmulBatched(
+      cpu.NDArrayF32Adapter.toF32(a1, ws), cpu.NDArrayF32Adapter.toF32(b1, ws), batch, m, k, n, ws, kernels
+    )
+    NDArray.fromArray(out, resultShape(a0, b0, batch, m, n))
+
+  /** 1-D promotion, core-dimension check and batch broadcast shape shared by the matmul paths. */
+  private def matmulShapes[A, B](a0: NDArray[A], b0: NDArray[B]): (NDArray[A], NDArray[B], Array[Int], Int, Int, Int) =
     if a0.ndim == 0 || b0.ndim == 0 then
       throw new IllegalArgumentException("matmul: Input operand does not have enough dimensions")
     val a1 = if a0.ndim == 1 then a0.reshape(1, a0.shapeArr(0)) else a0
@@ -52,31 +89,14 @@ private[numscala] object LinAlgCore:
       throw new IllegalArgumentException(
         s"matmul: Input operand 1 has a mismatch in its core dimension 0, with gufunc signature (n?,k),(k,m?)->(n?,m?) (size $k2 is different from $k)"
       )
-    val batchA = a1.shapeArr.dropRight(2)
-    val batchB = b1.shapeArr.dropRight(2)
-    val batch = Shape.broadcast(batchA, batchB)
-    val aB = a1.asType(using d).broadcastTo((batch ++ Array(m, k)).toSeq*).contiguous
-    val bB = b1.asType(using d).broadcastTo((batch ++ Array(k, n)).toSeq*).contiguous
-    val nb = Shape.size(batch)
-    val ad = aB.toArray
-    val bd = bB.toArray
-    val out = d.newArray(nb * m * n)
-    (d: DType[?]) match
-      case DType.Float64 =>
-        val o = out.asInstanceOf[Array[Double]]
-        var t = 0
-        while t < nb do
-          gemmD(ad.asInstanceOf[Array[Double]], t * m * k, bd.asInstanceOf[Array[Double]], t * k * n, o, t * m * n, m, k, n)
-          t += 1
-      case _ =>
-        var t = 0
-        while t < nb do
-          gemmGeneric(d, ad, t * m * k, bd, t * k * n, out, t * m * n, m, k, n)
-          t += 1
+    val batch = Shape.broadcast(a1.shapeArr.dropRight(2), b1.shapeArr.dropRight(2))
+    (a1, b1, batch, m, k, n)
+
+  private def resultShape(a0: NDArray[?], b0: NDArray[?], batch: Array[Int], m: Int, n: Int): Array[Int] =
     var shape = batch ++ Array(m, n)
     if a0.ndim == 1 then shape = shape.patch(shape.length - 2, Nil, 1)
     if b0.ndim == 1 then shape = shape.dropRight(1)
-    NDArray.fromArray(out, shape)(using d)
+    shape
 
   /** `np.dot`. */
   def dot[A, B, U](a: NDArray[A], b: NDArray[B])(using p: NumPromote[A, B]): NDArray[p.Out] =
