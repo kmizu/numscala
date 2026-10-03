@@ -9,7 +9,7 @@ set routines, `np.linalg`, `np.fft`, `np.random` (bit-compatible with NumPy's ge
 formatted exactly like NumPy's `str()`/`repr()`.
 
 ```scala
-libraryDependencies += "com.github.kmizu" %% "numscala" % "0.1.1"
+libraryDependencies += "com.github.kmizu" %% "numscala" % "0.2.0"
 ```
 
 Requires Scala 3.3+ and Java 17+. No dependencies.

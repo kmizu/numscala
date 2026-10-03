@@ -22,6 +22,7 @@ What cannot live in the repository are the credentials. They are needed once.
 | `SONATYPE_USERNAME`, `SONATYPE_PASSWORD` secrets | set |
 | **0.1.0** | `com.github.kmizu:numscala_3:0.1.0`, package `com.github.kmizu.numscala` |
 | **0.1.1** | adds the backquoted floor-division operator ``a `//` b`` / ``a `//=` b`` |
+| **0.2.0** | NEP 50 weak scalars: `float32Array + 2.0` stays float32, `int8Array + 1` stays int8 (operators, in-place, ufuncs). Breaking: `np.add(int32Array, 3L)` is int32 (was int64) |
 | superseded | `com.github.kmizu:num-scala_3:0.1.0` (package `numscala`) was published first under the old name. Maven Central artifacts cannot be deleted, so it remains available but is no longer maintained. |
 
 Releasing a new version is now just `git tag -a vX.Y.Z -m ... && git push origin vX.Y.Z`.
