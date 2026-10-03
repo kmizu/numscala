@@ -289,6 +289,172 @@ object NumPromote:
   given n_Complex_Float: Aux[Complex, Float, Complex] = make(DType.Complex128)
   given n_Complex_Double: Aux[Complex, Double, Complex] = make(DType.Complex128)
 
+/** Result type of an operator between an array of dtype `A` and a Scala scalar of type `S`
+  * (NEP 50). `Boolean`, `Int`, `Long`, `Double` and `Complex` scalars behave like Python
+  * scalars ("weak"): they take the array's dtype unless their kind (bool < int < float <
+  * complex) is higher. Other scalar types (`Byte`, `Short`, `Float`, unsigned) behave like
+  * NumPy scalars and promote normally.
+  */
+trait WeakPromote[A, S]:
+  type Out
+  def dtype: NumDType[Out]
+  /** The scalar converted to `Out`; a weak integer that does not fit throws like NumPy's `OverflowError`. */
+  def lift(s: S): Out
+  /** `1` / `-1` when a weak integer scalar is above / below the range of `Out`, else `0`. */
+  def outOfRange(s: S): Int
+
+object WeakPromote:
+  type Aux[A, S, O] = WeakPromote[A, S] { type Out = O }
+  private def make[A, S, O](d: NumDType[O], src: DType[S]): Aux[A, S, O] = new WeakPromote[A, S]:
+    type Out = O
+    val dtype: NumDType[O] = d
+    def lift(s: S): O = d.castFrom(src, s)
+    def outOfRange(s: S): Int = 0
+  private def int[A, S, O](d: NumDType[O], toLong: S => Long, lo: Long, hi: Long): Aux[A, S, O] =
+    new WeakPromote[A, S]:
+      type Out = O
+      val dtype: NumDType[O] = d
+      def outOfRange(s: S): Int =
+        val v = toLong(s)
+        if v > hi then 1 else if v < lo then -1 else 0
+      def lift(s: S): O =
+        if outOfRange(s) != 0 then
+          throw new ArithmeticException(s"Python integer ${toLong(s)} out of bounds for ${d.name}")
+        d.fromLong(toLong(s))
+  given same[T](using d: NumDType[T]): Aux[T, T, T] = make(d, d)
+  given w_Boolean_Byte: Aux[Boolean, Byte, Byte] = make(DType.Int8, DType.Int8)
+  given w_Boolean_Short: Aux[Boolean, Short, Short] = make(DType.Int16, DType.Int16)
+  given w_Boolean_Int: Aux[Boolean, Int, Int] = make(DType.Int32, DType.Int32)
+  given w_Boolean_Long: Aux[Boolean, Long, Long] = make(DType.Int64, DType.Int64)
+  given w_Boolean_UInt8: Aux[Boolean, UInt8, UInt8] = make(DType.UInt8, DType.UInt8)
+  given w_Boolean_UInt16: Aux[Boolean, UInt16, UInt16] = make(DType.UInt16, DType.UInt16)
+  given w_Boolean_UInt32: Aux[Boolean, UInt32, UInt32] = make(DType.UInt32, DType.UInt32)
+  given w_Boolean_UInt64: Aux[Boolean, UInt64, UInt64] = make(DType.UInt64, DType.UInt64)
+  given w_Boolean_Float: Aux[Boolean, Float, Float] = make(DType.Float32, DType.Float32)
+  given w_Boolean_Double: Aux[Boolean, Double, Double] = make(DType.Float64, DType.Float64)
+  given w_Boolean_Complex: Aux[Boolean, Complex, Complex] = make(DType.Complex128, DType.Complex128)
+  given w_Byte_Boolean: Aux[Byte, Boolean, Byte] = make(DType.Int8, DType.Bool)
+  given w_Byte_Short: Aux[Byte, Short, Short] = make(DType.Int16, DType.Int16)
+  given w_Byte_Int: Aux[Byte, Int, Byte] = int(DType.Int8, (x: Int) => x.toLong, Byte.MinValue.toLong, Byte.MaxValue.toLong)
+  given w_Byte_Long: Aux[Byte, Long, Byte] = int(DType.Int8, (x: Long) => x.toLong, Byte.MinValue.toLong, Byte.MaxValue.toLong)
+  given w_Byte_UInt8: Aux[Byte, UInt8, Short] = make(DType.Int16, DType.UInt8)
+  given w_Byte_UInt16: Aux[Byte, UInt16, Int] = make(DType.Int32, DType.UInt16)
+  given w_Byte_UInt32: Aux[Byte, UInt32, Long] = make(DType.Int64, DType.UInt32)
+  given w_Byte_UInt64: Aux[Byte, UInt64, Double] = make(DType.Float64, DType.UInt64)
+  given w_Byte_Float: Aux[Byte, Float, Float] = make(DType.Float32, DType.Float32)
+  given w_Byte_Double: Aux[Byte, Double, Double] = make(DType.Float64, DType.Float64)
+  given w_Byte_Complex: Aux[Byte, Complex, Complex] = make(DType.Complex128, DType.Complex128)
+  given w_Short_Boolean: Aux[Short, Boolean, Short] = make(DType.Int16, DType.Bool)
+  given w_Short_Byte: Aux[Short, Byte, Short] = make(DType.Int16, DType.Int8)
+  given w_Short_Int: Aux[Short, Int, Short] = int(DType.Int16, (x: Int) => x.toLong, Short.MinValue.toLong, Short.MaxValue.toLong)
+  given w_Short_Long: Aux[Short, Long, Short] = int(DType.Int16, (x: Long) => x.toLong, Short.MinValue.toLong, Short.MaxValue.toLong)
+  given w_Short_UInt8: Aux[Short, UInt8, Short] = make(DType.Int16, DType.UInt8)
+  given w_Short_UInt16: Aux[Short, UInt16, Int] = make(DType.Int32, DType.UInt16)
+  given w_Short_UInt32: Aux[Short, UInt32, Long] = make(DType.Int64, DType.UInt32)
+  given w_Short_UInt64: Aux[Short, UInt64, Double] = make(DType.Float64, DType.UInt64)
+  given w_Short_Float: Aux[Short, Float, Float] = make(DType.Float32, DType.Float32)
+  given w_Short_Double: Aux[Short, Double, Double] = make(DType.Float64, DType.Float64)
+  given w_Short_Complex: Aux[Short, Complex, Complex] = make(DType.Complex128, DType.Complex128)
+  given w_Int_Boolean: Aux[Int, Boolean, Int] = make(DType.Int32, DType.Bool)
+  given w_Int_Byte: Aux[Int, Byte, Int] = make(DType.Int32, DType.Int8)
+  given w_Int_Short: Aux[Int, Short, Int] = make(DType.Int32, DType.Int16)
+  given w_Int_Long: Aux[Int, Long, Int] = int(DType.Int32, (x: Long) => x.toLong, Int.MinValue.toLong, Int.MaxValue.toLong)
+  given w_Int_UInt8: Aux[Int, UInt8, Int] = make(DType.Int32, DType.UInt8)
+  given w_Int_UInt16: Aux[Int, UInt16, Int] = make(DType.Int32, DType.UInt16)
+  given w_Int_UInt32: Aux[Int, UInt32, Long] = make(DType.Int64, DType.UInt32)
+  given w_Int_UInt64: Aux[Int, UInt64, Double] = make(DType.Float64, DType.UInt64)
+  given w_Int_Float: Aux[Int, Float, Double] = make(DType.Float64, DType.Float32)
+  given w_Int_Double: Aux[Int, Double, Double] = make(DType.Float64, DType.Float64)
+  given w_Int_Complex: Aux[Int, Complex, Complex] = make(DType.Complex128, DType.Complex128)
+  given w_Long_Boolean: Aux[Long, Boolean, Long] = make(DType.Int64, DType.Bool)
+  given w_Long_Byte: Aux[Long, Byte, Long] = make(DType.Int64, DType.Int8)
+  given w_Long_Short: Aux[Long, Short, Long] = make(DType.Int64, DType.Int16)
+  given w_Long_Int: Aux[Long, Int, Long] = int(DType.Int64, (x: Int) => x.toLong, Long.MinValue, Long.MaxValue)
+  given w_Long_UInt8: Aux[Long, UInt8, Long] = make(DType.Int64, DType.UInt8)
+  given w_Long_UInt16: Aux[Long, UInt16, Long] = make(DType.Int64, DType.UInt16)
+  given w_Long_UInt32: Aux[Long, UInt32, Long] = make(DType.Int64, DType.UInt32)
+  given w_Long_UInt64: Aux[Long, UInt64, Double] = make(DType.Float64, DType.UInt64)
+  given w_Long_Float: Aux[Long, Float, Double] = make(DType.Float64, DType.Float32)
+  given w_Long_Double: Aux[Long, Double, Double] = make(DType.Float64, DType.Float64)
+  given w_Long_Complex: Aux[Long, Complex, Complex] = make(DType.Complex128, DType.Complex128)
+  given w_UInt8_Boolean: Aux[UInt8, Boolean, UInt8] = make(DType.UInt8, DType.Bool)
+  given w_UInt8_Byte: Aux[UInt8, Byte, Short] = make(DType.Int16, DType.Int8)
+  given w_UInt8_Short: Aux[UInt8, Short, Short] = make(DType.Int16, DType.Int16)
+  given w_UInt8_Int: Aux[UInt8, Int, UInt8] = int(DType.UInt8, (x: Int) => x.toLong, 0L, 255L)
+  given w_UInt8_Long: Aux[UInt8, Long, UInt8] = int(DType.UInt8, (x: Long) => x.toLong, 0L, 255L)
+  given w_UInt8_UInt16: Aux[UInt8, UInt16, UInt16] = make(DType.UInt16, DType.UInt16)
+  given w_UInt8_UInt32: Aux[UInt8, UInt32, UInt32] = make(DType.UInt32, DType.UInt32)
+  given w_UInt8_UInt64: Aux[UInt8, UInt64, UInt64] = make(DType.UInt64, DType.UInt64)
+  given w_UInt8_Float: Aux[UInt8, Float, Float] = make(DType.Float32, DType.Float32)
+  given w_UInt8_Double: Aux[UInt8, Double, Double] = make(DType.Float64, DType.Float64)
+  given w_UInt8_Complex: Aux[UInt8, Complex, Complex] = make(DType.Complex128, DType.Complex128)
+  given w_UInt16_Boolean: Aux[UInt16, Boolean, UInt16] = make(DType.UInt16, DType.Bool)
+  given w_UInt16_Byte: Aux[UInt16, Byte, Int] = make(DType.Int32, DType.Int8)
+  given w_UInt16_Short: Aux[UInt16, Short, Int] = make(DType.Int32, DType.Int16)
+  given w_UInt16_Int: Aux[UInt16, Int, UInt16] = int(DType.UInt16, (x: Int) => x.toLong, 0L, 65535L)
+  given w_UInt16_Long: Aux[UInt16, Long, UInt16] = int(DType.UInt16, (x: Long) => x.toLong, 0L, 65535L)
+  given w_UInt16_UInt8: Aux[UInt16, UInt8, UInt16] = make(DType.UInt16, DType.UInt8)
+  given w_UInt16_UInt32: Aux[UInt16, UInt32, UInt32] = make(DType.UInt32, DType.UInt32)
+  given w_UInt16_UInt64: Aux[UInt16, UInt64, UInt64] = make(DType.UInt64, DType.UInt64)
+  given w_UInt16_Float: Aux[UInt16, Float, Float] = make(DType.Float32, DType.Float32)
+  given w_UInt16_Double: Aux[UInt16, Double, Double] = make(DType.Float64, DType.Float64)
+  given w_UInt16_Complex: Aux[UInt16, Complex, Complex] = make(DType.Complex128, DType.Complex128)
+  given w_UInt32_Boolean: Aux[UInt32, Boolean, UInt32] = make(DType.UInt32, DType.Bool)
+  given w_UInt32_Byte: Aux[UInt32, Byte, Long] = make(DType.Int64, DType.Int8)
+  given w_UInt32_Short: Aux[UInt32, Short, Long] = make(DType.Int64, DType.Int16)
+  given w_UInt32_Int: Aux[UInt32, Int, UInt32] = int(DType.UInt32, (x: Int) => x.toLong, 0L, 4294967295L)
+  given w_UInt32_Long: Aux[UInt32, Long, UInt32] = int(DType.UInt32, (x: Long) => x.toLong, 0L, 4294967295L)
+  given w_UInt32_UInt8: Aux[UInt32, UInt8, UInt32] = make(DType.UInt32, DType.UInt8)
+  given w_UInt32_UInt16: Aux[UInt32, UInt16, UInt32] = make(DType.UInt32, DType.UInt16)
+  given w_UInt32_UInt64: Aux[UInt32, UInt64, UInt64] = make(DType.UInt64, DType.UInt64)
+  given w_UInt32_Float: Aux[UInt32, Float, Double] = make(DType.Float64, DType.Float32)
+  given w_UInt32_Double: Aux[UInt32, Double, Double] = make(DType.Float64, DType.Float64)
+  given w_UInt32_Complex: Aux[UInt32, Complex, Complex] = make(DType.Complex128, DType.Complex128)
+  given w_UInt64_Boolean: Aux[UInt64, Boolean, UInt64] = make(DType.UInt64, DType.Bool)
+  given w_UInt64_Byte: Aux[UInt64, Byte, Double] = make(DType.Float64, DType.Int8)
+  given w_UInt64_Short: Aux[UInt64, Short, Double] = make(DType.Float64, DType.Int16)
+  given w_UInt64_Int: Aux[UInt64, Int, UInt64] = int(DType.UInt64, (x: Int) => x.toLong, 0L, Long.MaxValue)
+  given w_UInt64_Long: Aux[UInt64, Long, UInt64] = int(DType.UInt64, (x: Long) => x.toLong, 0L, Long.MaxValue)
+  given w_UInt64_UInt8: Aux[UInt64, UInt8, UInt64] = make(DType.UInt64, DType.UInt8)
+  given w_UInt64_UInt16: Aux[UInt64, UInt16, UInt64] = make(DType.UInt64, DType.UInt16)
+  given w_UInt64_UInt32: Aux[UInt64, UInt32, UInt64] = make(DType.UInt64, DType.UInt32)
+  given w_UInt64_Float: Aux[UInt64, Float, Double] = make(DType.Float64, DType.Float32)
+  given w_UInt64_Double: Aux[UInt64, Double, Double] = make(DType.Float64, DType.Float64)
+  given w_UInt64_Complex: Aux[UInt64, Complex, Complex] = make(DType.Complex128, DType.Complex128)
+  given w_Float_Boolean: Aux[Float, Boolean, Float] = make(DType.Float32, DType.Bool)
+  given w_Float_Byte: Aux[Float, Byte, Float] = make(DType.Float32, DType.Int8)
+  given w_Float_Short: Aux[Float, Short, Float] = make(DType.Float32, DType.Int16)
+  given w_Float_Int: Aux[Float, Int, Float] = make(DType.Float32, DType.Int32)
+  given w_Float_Long: Aux[Float, Long, Float] = make(DType.Float32, DType.Int64)
+  given w_Float_UInt8: Aux[Float, UInt8, Float] = make(DType.Float32, DType.UInt8)
+  given w_Float_UInt16: Aux[Float, UInt16, Float] = make(DType.Float32, DType.UInt16)
+  given w_Float_UInt32: Aux[Float, UInt32, Double] = make(DType.Float64, DType.UInt32)
+  given w_Float_UInt64: Aux[Float, UInt64, Double] = make(DType.Float64, DType.UInt64)
+  given w_Float_Double: Aux[Float, Double, Float] = make(DType.Float32, DType.Float64)
+  given w_Float_Complex: Aux[Float, Complex, Complex] = make(DType.Complex128, DType.Complex128)
+  given w_Double_Boolean: Aux[Double, Boolean, Double] = make(DType.Float64, DType.Bool)
+  given w_Double_Byte: Aux[Double, Byte, Double] = make(DType.Float64, DType.Int8)
+  given w_Double_Short: Aux[Double, Short, Double] = make(DType.Float64, DType.Int16)
+  given w_Double_Int: Aux[Double, Int, Double] = make(DType.Float64, DType.Int32)
+  given w_Double_Long: Aux[Double, Long, Double] = make(DType.Float64, DType.Int64)
+  given w_Double_UInt8: Aux[Double, UInt8, Double] = make(DType.Float64, DType.UInt8)
+  given w_Double_UInt16: Aux[Double, UInt16, Double] = make(DType.Float64, DType.UInt16)
+  given w_Double_UInt32: Aux[Double, UInt32, Double] = make(DType.Float64, DType.UInt32)
+  given w_Double_UInt64: Aux[Double, UInt64, Double] = make(DType.Float64, DType.UInt64)
+  given w_Double_Float: Aux[Double, Float, Double] = make(DType.Float64, DType.Float32)
+  given w_Double_Complex: Aux[Double, Complex, Complex] = make(DType.Complex128, DType.Complex128)
+  given w_Complex_Boolean: Aux[Complex, Boolean, Complex] = make(DType.Complex128, DType.Bool)
+  given w_Complex_Byte: Aux[Complex, Byte, Complex] = make(DType.Complex128, DType.Int8)
+  given w_Complex_Short: Aux[Complex, Short, Complex] = make(DType.Complex128, DType.Int16)
+  given w_Complex_Int: Aux[Complex, Int, Complex] = make(DType.Complex128, DType.Int32)
+  given w_Complex_Long: Aux[Complex, Long, Complex] = make(DType.Complex128, DType.Int64)
+  given w_Complex_UInt8: Aux[Complex, UInt8, Complex] = make(DType.Complex128, DType.UInt8)
+  given w_Complex_UInt16: Aux[Complex, UInt16, Complex] = make(DType.Complex128, DType.UInt16)
+  given w_Complex_UInt32: Aux[Complex, UInt32, Complex] = make(DType.Complex128, DType.UInt32)
+  given w_Complex_UInt64: Aux[Complex, UInt64, Complex] = make(DType.Complex128, DType.UInt64)
+  given w_Complex_Float: Aux[Complex, Float, Complex] = make(DType.Complex128, DType.Float32)
+  given w_Complex_Double: Aux[Complex, Double, Complex] = make(DType.Complex128, DType.Float64)
+
 /** Result type of true division (`/`) between two numeric dtypes: always inexact. */
 trait DivPromote[A, B]:
   type Out
