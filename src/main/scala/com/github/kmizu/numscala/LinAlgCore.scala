@@ -11,13 +11,13 @@ private[numscala] object LinAlgCore:
       val oi = oOff + i * n
       var p = 0
       while p < k do
+        // no `av == 0` shortcut: 0 * inf and 0 * nan must still produce NaN
         val av = a(ai + p)
-        if av != 0.0 then
-          val bp = bOff + p * n
-          var j = 0
-          while j < n do
-            out(oi + j) += av * b(bp + j)
-            j += 1
+        val bp = bOff + p * n
+        var j = 0
+        while j < n do
+          out(oi + j) += av * b(bp + j)
+          j += 1
         p += 1
       i += 1
 
