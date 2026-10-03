@@ -23,6 +23,7 @@ What cannot live in the repository are the credentials. They are needed once.
 | **0.1.0** | `com.github.kmizu:numscala_3:0.1.0`, package `com.github.kmizu.numscala` |
 | **0.1.1** | adds the backquoted floor-division operator ``a `//` b`` / ``a `//=` b`` |
 | **0.2.0** | NEP 50 weak scalars: `float32Array + 2.0` stays float32, `int8Array + 1` stays int8 (operators, in-place, ufuncs). Breaking: `np.add(int32Array, 3L)` is int32 (was int64) |
+| **0.3.0** | Float32 CPU kernel layer `com.github.kmizu.numscala.cpu` (NS-CPU-001: `gemmInto`, row gather/scatter/coalesce, elementwise ops, affine scan, `Workspace`); float32 `np.matmul` runs on it without copies (about 7x faster). Fix: matmul no longer drops `0 * inf` / `0 * nan` (now NaN, as in NumPy). The optional JDK 25 `vector25` backend is not published |
 | superseded | `com.github.kmizu:num-scala_3:0.1.0` (package `numscala`) was published first under the old name. Maven Central artifacts cannot be deleted, so it remains available but is no longer maintained. |
 
 Releasing a new version is now just `git tag -a vX.Y.Z -m ... && git push origin vX.Y.Z`.
