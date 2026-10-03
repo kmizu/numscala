@@ -18,7 +18,10 @@ Build: `sbt compile`, `sbt test` (munit). JDK 17+.
 | `Ops.scala` | `Ops.arith`, `Ops.binary`, `Ops.compare`, `Ops.equal`, `Ops.round`, `Ops.diagonal`; `Arith`, `CmpOp` enums. |
 | `Reduce.scala` | `Lanes.reduce / reduceAxes / reduceAll / transform` (lane machinery for anything "along an axis"); `Reduce.*` (sum, mean, var, max, argmax, cumulate, pairwiseSum, ...). |
 | `Sorting.scala` | `Sorting.sort/argsort` (stable, NaN last), `Searching.nonzero`. |
-| `LinAlgCore.scala` | `matmulD`, `dotD`, `tensordotD`. |
+| `LinAlgCore.scala` | `matmulD`, `dotD`, `tensordotD`; float32 `matmul` dispatches to `cpu.NDArrayF32Adapter`. |
+| `cpu/` | Float32 kernel layer (NS-CPU-KERNEL-1, see `docs/CPU_KERNELS.md`): `MatrixF32`, `Workspace`, `F32Kernels` (validation + contract), `ScalarF32Kernels` (reference GEMM), `RowOps`, `ElementOps`, `AffineScan`, `NDArrayF32Adapter`, `KernelDiagnostics` (`F32Backend`). |
+| `vector25/` (sbt project) | Optional JDK 25 Vector API backend `VectorF32Kernels`; not aggregated by root. Its tests reuse `cpu.F32KernelContract` / `TinyModelContract` from the root tests. |
+| `benchmarks/` (sbt project) | JMH benchmarks (`GemmBench`, `KernelBench`), never published. |
 | `Format.scala` | NumPy-exact `str`/`repr` printing, print options. |
 | `Nested.scala`, `NpCreation.scala` | `np.array` from nested `Seq`s, zeros/ones/full/arange/linspace/eye/diag/tri/meshgrid/... |
 
@@ -68,6 +71,12 @@ dtype ops: d.plus/minus/times/negate/power/sign (NumDType), d.abs/max/min/mod/fl
 * Tests: munit, one suite per module in `src/test/scala/com/github/kmizu/numscala/`, checking values
   against what NumPy returns (write the expected values from NumPy semantics; use
   tolerances `assertEqualsDouble(x, y, 1e-12)` for floats). Aim for >= 80% coverage.
+* Float32 kernels: validate everything before writing, never skip `0 * x` terms, no boxing/closures/
+  collections in inner loops, no hidden thread pools. New kernels get fixtures in `F32KernelContract`
+  so every backend runs them. Vector API code must take its species from a Java `static final` field
+  (`vector25/.../Species.java`), otherwise HotSpot cannot intrinsify it and every vector is boxed.
+  Never use `reduceLanes(ADD)` on floats: its order is unspecified and changes with the JIT tier; sum
+  lanes in a fixed order instead (`DeterminismSuite`).
 * Keep files under ~800 lines; split a module into several files if needed.
 * Scaladoc every public function in one or two lines, naming the NumPy equivalent.
 * Differential tests against NumPy: `python3 project/difftest/gen_difftest.py [seed] [scale]`

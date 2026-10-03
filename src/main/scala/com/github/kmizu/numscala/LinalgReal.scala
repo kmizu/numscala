@@ -54,14 +54,14 @@ private[numscala] object LinalgReal:
     while i < m do
       var p = 0
       while p < k do
+        // no `av == 0` shortcut: 0 * inf and 0 * nan must still produce NaN
         val av = a(i * k + p)
-        if av != 0.0 then
-          var j = 0
-          val bp = p * n
-          val oi = i * n
-          while j < n do
-            out(oi + j) += av * b(bp + j)
-            j += 1
+        var j = 0
+        val bp = p * n
+        val oi = i * n
+        while j < n do
+          out(oi + j) += av * b(bp + j)
+          j += 1
         p += 1
       i += 1
     out
