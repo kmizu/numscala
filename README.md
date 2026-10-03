@@ -174,12 +174,30 @@ reductions with NumPy's pairwise summation, sorting, matmul) use specialised loo
 dtypes go through boxed element access and are several times slower. Run
 `sbt "Test/runMain com.github.kmizu.numscala.bench.Bench"` to measure on your machine.
 
+### Float32 CPU kernels
+
+`com.github.kmizu.numscala.cpu` adds allocation-free Float32 kernels for repeated CPU work, such as a
+small model's training loop: `gemmInto` into caller-owned buffers, row gather/scatter-add/coalesce,
+sigmoid/SiLU, stable row log-sum-exp, an elementwise affine scan, and worker-owned `Workspace`s that
+report how much was allocated, packed and converted. `np.matmul` on float32 uses them directly on the
+arrays' buffers (transposed and gapped views included) instead of copying. An optional JDK 25 Vector API
+backend lives in `vector25/`. See [docs/CPU_KERNELS.md](docs/CPU_KERNELS.md).
+
+```scala
+import com.github.kmizu.numscala.cpu.*
+val ws = new Workspace()
+val (x, w, y) = (MatrixF32.zeros(32, 384), MatrixF32.zeros(768, 384), MatrixF32.zeros(32, 768))
+ScalarF32Kernels.gemmInto(x, Transpose.No, w, Transpose.Yes, y, ws)   // y := x w^T, y reused
+```
+
 ## Building
 
 ```bash
 sbt test                           # run the test suite
 sbt "Test/runMain com.github.kmizu.numscala.bench.Bench"     # micro benchmarks
 sbt publishLocal                   # install locally
+sbt vector25/test                  # optional Vector API backend (JDK 25)
+sbt "benchmarks/Jmh/run .*GemmBench.*"                       # JMH kernel benchmarks (JDK 25)
 ```
 
 Publishing to Maven Central: see [docs/PUBLISHING.md](docs/PUBLISHING.md).

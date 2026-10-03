@@ -76,3 +76,16 @@ class BackendDiffSuite extends munit.FunSuite:
     assertEquals(F32Backend.select("auto").chosen, "vector25")
     assert(KernelDiagnostics.report(sel).contains("lanes="))
   }
+
+/** The integration model on the vector backend, and scalar vs vector on the same model step. */
+class VectorTinyModelSuite extends TinyModelContract(new VectorF32Kernels(0L)):
+  test("tiny model: scalar and vector backends give the same loss and gradients") {
+    val ms = new TinyModel(ScalarF32Kernels, 11, 8, 6, 5, 3)
+    val mv = new TinyModel(new VectorF32Kernels(0L), 11, 8, 6, 5, 3)
+    val ps = ms.init(7); val pv = mv.init(7)
+    val (ids, targets) = TinyModel.data(8, 11, 15)
+    val gs = ms.zerosLike(ps); val gv = mv.zerosLike(pv)
+    assertEqualsFloat(ms.lossAndGrads(ps, ids, targets, gs), mv.lossAndGrads(pv, ids, targets, gv), 1e-5f)
+    for (a, b) <- gs.all.zip(gv.all); i <- 0 until a.rows; j <- 0 until a.cols do
+      assertEqualsFloat(a(i, j), b(i, j), 1e-5f + 1e-3f * math.abs(a(i, j)))
+  }
