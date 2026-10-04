@@ -17,16 +17,32 @@ open class ScalarF32Kernels protected () extends F32Kernels:
 
   protected def gemmImpl(
       a: MatrixF32, transA: Transpose, b: MatrixF32, transB: Transpose, c: MatrixF32,
-      m: Int, n: Int, k: Int, alpha: Float, beta: Float, readsAB: Boolean, ws: Workspace
+      m: Int, n: Int, k: Int, alpha: Float, beta: Float, readsAB: Boolean, ws: Workspace, dispatchM: Int
   ): Unit =
     scaleC(c, m, n, beta)
     if readsAB then
-      (transA, transB) match
-        case (Transpose.No, Transpose.No) => gemmNN(a, b, c, m, n, k, alpha)
-        case (Transpose.No, Transpose.Yes) => gemmNT(a, b, c, m, n, k, alpha)
-        case (Transpose.Yes, Transpose.No) => gemmTN(a, b, c, m, n, k, alpha)
-        case (Transpose.Yes, Transpose.Yes) =>
-          gemmTN(a, packTransposed(b, k, n, ws), c, m, n, k, alpha)
+      if useScalarGemm(dispatchM, n, k) then scalarGemm(a, transA, b, transB, c, m, n, k, alpha, ws)
+      else fastGemm(a, transA, b, transB, c, m, n, k, alpha, ws)
+
+  /** Whether a product of logical shape `(m x k) * (k x n)` (the whole product, not a row slice) uses the scalar loops. */
+  protected def useScalarGemm(m: Int, n: Int, k: Int): Boolean = true
+
+  /** The backend's own GEMM for products where [[useScalarGemm]] is false (C already scaled by beta). */
+  protected def fastGemm(
+      a: MatrixF32, transA: Transpose, b: MatrixF32, transB: Transpose, c: MatrixF32,
+      m: Int, n: Int, k: Int, alpha: Float, ws: Workspace
+  ): Unit = scalarGemm(a, transA, b, transB, c, m, n, k, alpha, ws)
+
+  /** The reference loops, by layout (C already scaled by beta). */
+  protected final def scalarGemm(
+      a: MatrixF32, transA: Transpose, b: MatrixF32, transB: Transpose, c: MatrixF32,
+      m: Int, n: Int, k: Int, alpha: Float, ws: Workspace
+  ): Unit =
+    (transA, transB) match
+      case (Transpose.No, Transpose.No) => gemmNN(a, b, c, m, n, k, alpha)
+      case (Transpose.No, Transpose.Yes) => gemmNT(a, b, c, m, n, k, alpha)
+      case (Transpose.Yes, Transpose.No) => gemmTN(a, b, c, m, n, k, alpha)
+      case (Transpose.Yes, Transpose.Yes) => gemmTN(a, packTransposed(b, k, n, ws), c, m, n, k, alpha)
 
   /** `C := beta * C`; `beta == 0` writes zeros without reading C. */
   protected final def scaleC(c: MatrixF32, m: Int, n: Int, beta: Float): Unit =
@@ -60,7 +76,7 @@ open class ScalarF32Kernels protected () extends F32Kernels:
     MatrixF32(dst, off, k, n, n)
 
   /** `C += alpha * A B`: blocked row-axpy (K and N blocked so the B panel stays in cache). */
-  protected def gemmNN(a: MatrixF32, b: MatrixF32, c: MatrixF32, m: Int, n: Int, k: Int, alpha: Float): Unit =
+  protected final def gemmNN(a: MatrixF32, b: MatrixF32, c: MatrixF32, m: Int, n: Int, k: Int, alpha: Float): Unit =
     val ad = a.data; val bd = b.data; val cd = c.data
     var p0 = 0
     while p0 < k do
@@ -86,7 +102,7 @@ open class ScalarF32Kernels protected () extends F32Kernels:
       p0 = p1
 
   /** `C += alpha * A B^T`: row-by-row dot products (four partial sums). */
-  protected def gemmNT(a: MatrixF32, b: MatrixF32, c: MatrixF32, m: Int, n: Int, k: Int, alpha: Float): Unit =
+  protected final def gemmNT(a: MatrixF32, b: MatrixF32, c: MatrixF32, m: Int, n: Int, k: Int, alpha: Float): Unit =
     val ad = a.data; val bd = b.data; val cd = c.data
     var i = 0
     while i < m do
@@ -111,7 +127,7 @@ open class ScalarF32Kernels protected () extends F32Kernels:
       i += 1
 
   /** `C += alpha * A^T B` (A is `k x m` physically): blocked over rows of C, axpy over rows of B. */
-  protected def gemmTN(a: MatrixF32, b: MatrixF32, c: MatrixF32, m: Int, n: Int, k: Int, alpha: Float): Unit =
+  protected final def gemmTN(a: MatrixF32, b: MatrixF32, c: MatrixF32, m: Int, n: Int, k: Int, alpha: Float): Unit =
     val ad = a.data; val bd = b.data; val cd = c.data
     var i0 = 0
     while i0 < m do

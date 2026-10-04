@@ -15,8 +15,10 @@ final case class WorkspaceStats(
   * Not thread-safe: give each worker its own workspace. Capacity only grows through the explicit
   * `reserve*` calls; a kernel that needs more than is reserved fails before it writes any output.
   * Kernels borrow regions for the duration of one call only, so nothing borrowed may be kept across
-  * calls. `reset()` returns all borrowed regions without zeroing them. With `debug = true` the first
-  * thread that uses the workspace becomes its owner and use from any other thread throws.
+  * calls. `reset()` returns all borrowed regions without zeroing them. With `debug = true`, using the
+  * workspace from a second thread while a kernel call on another thread holds it throws
+  * `IllegalStateException`. Handing a workspace from one thread to another between calls (for example
+  * through a thread pool) is allowed.
   */
 final class Workspace(initialFloats: Int = 0, initialLongs: Int = 0, val debug: Boolean = false):
   if initialFloats < 0 || initialLongs < 0 then
@@ -31,7 +33,8 @@ final class Workspace(initialFloats: Int = 0, initialLongs: Int = 0, val debug: 
   private var grows = 0
   private var packed: Long = 0
   private var converted: Long = 0
-  @volatile private var owner: Thread | Null = null
+  private val holder = new java.util.concurrent.atomic.AtomicReference[Thread | Null](null)
+  private var depth = 0
 
   /** Ensures room for at least `n` Float32 elements in total (grows, never shrinks). */
   def reserveFloats(n: Int): Unit =
@@ -81,19 +84,34 @@ final class Workspace(initialFloats: Int = 0, initialLongs: Int = 0, val debug: 
 
   // ------------------------------------------------------------------ kernel-side borrowing
 
-  private[cpu] def checkThread(): Unit =
+  /** Marks the start of a kernel call (debug mode: claims the workspace for this thread; reentrant). */
+  private[cpu] def enter(): Unit =
     if debug then
       val t = Thread.currentThread()
-      val o = owner
-      if o == null then owner = t
-      else if o ne t then
-        throw new IllegalStateException(
-          s"Workspace is owned by thread '${o.getName}' but was used from '${t.getName}'; give each worker its own Workspace"
-        )
+      if !holder.compareAndSet(null, t) then
+        val h = holder.get()
+        if h ne t then
+          throw new IllegalStateException(
+            s"Workspace used from thread '${t.getName}' while thread '${if h == null then "?" else h.getName}' is using it; " +
+              "give each worker its own Workspace"
+          )
+      depth += 1
+
+  /** Marks the end of a kernel call started with [[enter]]. */
+  private[cpu] def exit(): Unit =
+    if debug then
+      depth -= 1
+      if depth == 0 then holder.set(null)
+
+  /** Debug-mode check for operations outside a kernel call (reserve/reset): no other thread may hold it. */
+  private[cpu] def checkThread(): Unit =
+    if debug then
+      val h = holder.get()
+      if h != null && (h ne Thread.currentThread()) then
+        throw new IllegalStateException(s"Workspace is in use by thread '${h.getName}'")
 
   /** Fails (before any output is written) unless the requested amounts can still be borrowed. */
   private[cpu] def require(nFloats: Int, nLongs: Int, op: String): Unit =
-    checkThread()
     if floatTop.toLong + nFloats > floats.length || longTop.toLong + nLongs > longs.length then
       throw new IllegalStateException(
         s"$op: workspace too small (needs floats=$nFloats longs=$nLongs free, has " +

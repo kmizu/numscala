@@ -1,6 +1,6 @@
 package com.github.kmizu.numscala.cpu.vector25
 
-import com.github.kmizu.numscala.cpu.{MatrixF32, ScalarF32Kernels}
+import com.github.kmizu.numscala.cpu.{MatrixF32, ScalarF32Kernels, Transpose, Workspace}
 import jdk.incubator.vector.{FloatVector, VectorMask}
 
 /** Float32 kernels on the JDK 25 Vector API (`FloatVector.SPECIES_PREFERRED`, FMA).
@@ -37,13 +37,17 @@ class VectorF32Kernels(val smallGemm: Long) extends ScalarF32Kernels:
 
   // ------------------------------------------------------------------ GEMM
 
-  override protected def gemmNN(a: MatrixF32, b: MatrixF32, c: MatrixF32, m: Int, n: Int, k: Int, alpha: Float): Unit =
-    if small(m, n, k) then super.gemmNN(a, b, c, m, n, k, alpha)
-    else panels(a.data, a.offset, a.rowStride, 1, b, c, m, n, k, alpha)
+  override protected def useScalarGemm(m: Int, n: Int, k: Int): Boolean = small(m, n, k)
 
-  override protected def gemmTN(a: MatrixF32, b: MatrixF32, c: MatrixF32, m: Int, n: Int, k: Int, alpha: Float): Unit =
-    if small(m, n, k) then super.gemmTN(a, b, c, m, n, k, alpha)
-    else panels(a.data, a.offset, 1, a.rowStride, b, c, m, n, k, alpha)
+  override protected def fastGemm(
+      a: MatrixF32, transA: Transpose, b: MatrixF32, transB: Transpose, c: MatrixF32,
+      m: Int, n: Int, k: Int, alpha: Float, ws: Workspace
+  ): Unit =
+    (transA, transB) match
+      case (Transpose.No, Transpose.No) => panels(a.data, a.offset, a.rowStride, 1, b, c, m, n, k, alpha)
+      case (Transpose.Yes, Transpose.No) => panels(a.data, a.offset, 1, a.rowStride, b, c, m, n, k, alpha)
+      case (Transpose.No, Transpose.Yes) => nt(a, b, c, m, n, k, alpha)
+      case (Transpose.Yes, Transpose.Yes) => panels(a.data, a.offset, 1, a.rowStride, packTransposed(b, k, n, ws), c, m, n, k, alpha)
 
   /** `C += alpha * A B` where `A(i, p) = ad(ao + i * ai + p * ap)` and B is row-major.
     * Column panels of width `2L` outermost (the B panel stays in L1/L2), 4-row register blocks inside.
@@ -152,51 +156,84 @@ class VectorF32Kernels(val smallGemm: Long) extends ScalarF32Kernels:
     val o = c.offset + i * c.rowStride + j
     acc.fma(alpha, FloatVector.fromArray(S, c.data, o, mask)).intoArray(c.data, o, mask)
 
-  /** `C += alpha * A B^T`: one row of A against four rows of B, lane-wise partial sums over k. */
-  override protected def gemmNT(a: MatrixF32, b: MatrixF32, c: MatrixF32, m: Int, n: Int, k: Int, alpha: Float): Unit =
-    if small(m, n, k) then return super.gemmNT(a, b, c, m, n, k, alpha)
+  /** `C += alpha * A B^T`: two rows of A against four rows of B, lane-wise FMA partial sums over k, lanes summed
+    * in a fixed order. Every element of C sees the same operation sequence whichever block computes it.
+    */
+  private def nt(a: MatrixF32, b: MatrixF32, c: MatrixF32, m: Int, n: Int, k: Int, alpha: Float): Unit =
+    var i = 0
+    while i + 1 < m do
+      ntRows2(a, b, c, i, n, k, alpha)
+      i += 2
+    if i < m then ntRow1(a, b, c, i, n, k, alpha)
+
+  private def ntRows2(a: MatrixF32, b: MatrixF32, c: MatrixF32, i: Int, n: Int, k: Int, alpha: Float): Unit =
     val ad = a.data; val bd = b.data; val cd = c.data
     val kb = S.loopBound(k)
     val tail = S.indexInRange(kb, k)
-    var i = 0
-    while i < m do
-      val ar = a.offset + i * a.rowStride
-      val cr = c.offset + i * c.rowStride
-      var j = 0
-      while j + 3 < n do
-        val b0 = b.offset + j * b.rowStride
-        val b1 = b0 + b.rowStride; val b2 = b1 + b.rowStride; val b3 = b2 + b.rowStride
-        var s0 = FloatVector.zero(S); var s1 = FloatVector.zero(S); var s2 = FloatVector.zero(S); var s3 = FloatVector.zero(S)
-        var p = 0
-        while p < kb do
-          val av = FloatVector.fromArray(S, ad, ar + p)
-          s0 = av.fma(FloatVector.fromArray(S, bd, b0 + p), s0)
-          s1 = av.fma(FloatVector.fromArray(S, bd, b1 + p), s1)
-          s2 = av.fma(FloatVector.fromArray(S, bd, b2 + p), s2)
-          s3 = av.fma(FloatVector.fromArray(S, bd, b3 + p), s3)
-          p += L
-        if kb < k then
-          val av = FloatVector.fromArray(S, ad, ar + kb, tail)
-          s0 = av.fma(FloatVector.fromArray(S, bd, b0 + kb, tail), s0)
-          s1 = av.fma(FloatVector.fromArray(S, bd, b1 + kb, tail), s1)
-          s2 = av.fma(FloatVector.fromArray(S, bd, b2 + kb, tail), s2)
-          s3 = av.fma(FloatVector.fromArray(S, bd, b3 + kb, tail), s3)
-        cd(cr + j) += alpha * sumLanes(s0)
-        cd(cr + j + 1) += alpha * sumLanes(s1)
-        cd(cr + j + 2) += alpha * sumLanes(s2)
-        cd(cr + j + 3) += alpha * sumLanes(s3)
-        j += 4
-      while j < n do
-        val b0 = b.offset + j * b.rowStride
-        var s0 = FloatVector.zero(S)
-        var p = 0
-        while p < kb do
-          s0 = FloatVector.fromArray(S, ad, ar + p).fma(FloatVector.fromArray(S, bd, b0 + p), s0)
-          p += L
-        if kb < k then s0 = FloatVector.fromArray(S, ad, ar + kb, tail).fma(FloatVector.fromArray(S, bd, b0 + kb, tail), s0)
-        cd(cr + j) += alpha * sumLanes(s0)
-        j += 1
-      i += 1
+    val ar0 = a.offset + i * a.rowStride
+    val ar1 = ar0 + a.rowStride
+    val cr0 = c.offset + i * c.rowStride
+    val cr1 = cr0 + c.rowStride
+    var j = 0
+    while j + 3 < n do
+      val b0 = b.offset + j * b.rowStride
+      val b1 = b0 + b.rowStride; val b2 = b1 + b.rowStride; val b3 = b2 + b.rowStride
+      var s00 = FloatVector.zero(S); var s01 = FloatVector.zero(S); var s02 = FloatVector.zero(S); var s03 = FloatVector.zero(S)
+      var s10 = FloatVector.zero(S); var s11 = FloatVector.zero(S); var s12 = FloatVector.zero(S); var s13 = FloatVector.zero(S)
+      var p = 0
+      while p < kb do
+        val x0 = FloatVector.fromArray(S, ad, ar0 + p)
+        val x1 = FloatVector.fromArray(S, ad, ar1 + p)
+        val y0 = FloatVector.fromArray(S, bd, b0 + p)
+        val y1 = FloatVector.fromArray(S, bd, b1 + p)
+        val y2 = FloatVector.fromArray(S, bd, b2 + p)
+        val y3 = FloatVector.fromArray(S, bd, b3 + p)
+        s00 = x0.fma(y0, s00); s01 = x0.fma(y1, s01); s02 = x0.fma(y2, s02); s03 = x0.fma(y3, s03)
+        s10 = x1.fma(y0, s10); s11 = x1.fma(y1, s11); s12 = x1.fma(y2, s12); s13 = x1.fma(y3, s13)
+        p += L
+      if kb < k then
+        val x0 = FloatVector.fromArray(S, ad, ar0 + kb, tail)
+        val x1 = FloatVector.fromArray(S, ad, ar1 + kb, tail)
+        val y0 = FloatVector.fromArray(S, bd, b0 + kb, tail)
+        val y1 = FloatVector.fromArray(S, bd, b1 + kb, tail)
+        val y2 = FloatVector.fromArray(S, bd, b2 + kb, tail)
+        val y3 = FloatVector.fromArray(S, bd, b3 + kb, tail)
+        s00 = x0.fma(y0, s00); s01 = x0.fma(y1, s01); s02 = x0.fma(y2, s02); s03 = x0.fma(y3, s03)
+        s10 = x1.fma(y0, s10); s11 = x1.fma(y1, s11); s12 = x1.fma(y2, s12); s13 = x1.fma(y3, s13)
+      cd(cr0 + j) += alpha * sumLanes(s00)
+      cd(cr0 + j + 1) += alpha * sumLanes(s01)
+      cd(cr0 + j + 2) += alpha * sumLanes(s02)
+      cd(cr0 + j + 3) += alpha * sumLanes(s03)
+      cd(cr1 + j) += alpha * sumLanes(s10)
+      cd(cr1 + j + 1) += alpha * sumLanes(s11)
+      cd(cr1 + j + 2) += alpha * sumLanes(s12)
+      cd(cr1 + j + 3) += alpha * sumLanes(s13)
+      j += 4
+    while j < n do
+      cd(cr0 + j) += alpha * dot(ad, ar0, bd, b.offset + j * b.rowStride, k, kb, tail)
+      cd(cr1 + j) += alpha * dot(ad, ar1, bd, b.offset + j * b.rowStride, k, kb, tail)
+      j += 1
+
+  private def ntRow1(a: MatrixF32, b: MatrixF32, c: MatrixF32, i: Int, n: Int, k: Int, alpha: Float): Unit =
+    val ad = a.data; val bd = b.data; val cd = c.data
+    val kb = S.loopBound(k)
+    val tail = S.indexInRange(kb, k)
+    val ar = a.offset + i * a.rowStride
+    val cr = c.offset + i * c.rowStride
+    var j = 0
+    while j < n do
+      cd(cr + j) += alpha * dot(ad, ar, bd, b.offset + j * b.rowStride, k, kb, tail)
+      j += 1
+
+  /** Lane-wise FMA dot product with the fixed-order lane sum (the per-element recipe of the NT kernel). */
+  private def dot(ad: Array[Float], ao: Int, bd: Array[Float], bo: Int, k: Int, kb: Int, tail: VectorMask[java.lang.Float]): Float =
+    var s0 = FloatVector.zero(S)
+    var p = 0
+    while p < kb do
+      s0 = FloatVector.fromArray(S, ad, ao + p).fma(FloatVector.fromArray(S, bd, bo + p), s0)
+      p += L
+    if kb < k then s0 = FloatVector.fromArray(S, ad, ao + kb, tail).fma(FloatVector.fromArray(S, bd, bo + kb, tail), s0)
+    sumLanes(s0)
 
   // ------------------------------------------------------------------ rows / elementwise / scan
 
