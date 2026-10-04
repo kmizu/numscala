@@ -1,15 +1,16 @@
 package com.github.kmizu.numscala.cpu.vector25
 
 import com.github.kmizu.numscala.cpu.{MatrixF32, ScalarF32Kernels, Transpose, Workspace}
-import jdk.incubator.vector.{FloatVector, VectorMask}
+import jdk.incubator.vector.{FloatVector, VectorMask, VectorOperators}
 
 /** Float32 kernels on the JDK 25 Vector API (`FloatVector.SPECIES_PREFERRED`, FMA).
   *
   * Shares validation and the remaining kernels with [[ScalarF32Kernels]]. Rounding differs from the
   * scalar path (FMA, lane-wise partial sums), within the contract's tolerances, but for a fixed
   * backend instance and shape the result is reproducible: every reduction uses a fixed order that
-  * does not depend on JIT compilation (no `reduceLanes`). GEMMs whose
-  * `m * n * k` is below `smallGemm` stay on the scalar loops; the threshold is fixed per instance.
+  * does not depend on JIT compilation (no `reduceLanes`), and `exp` (sigmoid, SiLU, log-sum-exp) is
+  * built from exactly specified lanewise operations. GEMMs whose `m * n * k` (of the whole product)
+  * is below `smallGemm` stay on the scalar loops; the threshold is fixed per instance.
   */
 class VectorF32Kernels(val smallGemm: Long) extends ScalarF32Kernels:
   // static final (Java) fields: the JIT must see the species as a constant
@@ -235,6 +236,128 @@ class VectorF32Kernels(val smallGemm: Long) extends ScalarF32Kernels:
     if kb < k then s0 = FloatVector.fromArray(S, ad, ao + kb, tail).fma(FloatVector.fromArray(S, bd, bo + kb, tail), s0)
     sumLanes(s0)
 
+  // ------------------------------------------------------------------ exp-based kernels
+
+  /** `exp` on every lane (Cephes-style: `n = round(x log2 e)`, Cody–Waite `r = x - n ln 2`, degree-6
+    * polynomial, scaling by `2^(n >> 1) * 2^(n - (n >> 1))` so denormal results round once). Only exactly
+    * specified lanewise operations are used, so the bits do not depend on the JIT tier; [[expScalar]] is the
+    * same recipe for tails. Max error about 2 ulp; NaN propagates, `exp(+inf) = inf`, `exp(-inf) = 0`.
+    */
+  private def expV(x0: FloatVector): FloatVector =
+    import VectorF32Kernels.Exp.*
+    val x = x0.max(Lo).min(Hi)
+    val t = x.fma(Log2e, Magic)
+    val nf = t.sub(Magic)
+    var r = nf.fma(FloatVector.broadcast(S, -Ln2Hi), x)
+    r = nf.fma(FloatVector.broadcast(S, -Ln2Lo), r)
+    var p = FloatVector.broadcast(S, P0)
+    p = p.fma(r, FloatVector.broadcast(S, P1)); p = p.fma(r, FloatVector.broadcast(S, P2))
+    p = p.fma(r, FloatVector.broadcast(S, P3)); p = p.fma(r, FloatVector.broadcast(S, P4))
+    p = p.fma(r, FloatVector.broadcast(S, P5))
+    val y = p.fma(r.mul(r), r).add(1f)
+    val n = t.reinterpretAsInts().sub(MagicBits)
+    val n1 = n.lanewise(VectorOperators.ASHR, 1)
+    val n2 = n.sub(n1)
+    val s1 = n1.add(127).lanewise(VectorOperators.LSHL, 23).reinterpretAsFloats()
+    val s2 = n2.add(127).lanewise(VectorOperators.LSHL, 23).reinterpretAsFloats()
+    y.mul(s1).mul(s2)
+
+  /** Scalar twin of [[expV]] (identical operations, hence identical bits). */
+  private def expScalar(x0: Float): Float =
+    import VectorF32Kernels.Exp.*
+    val x = Math.min(Math.max(x0, Lo), Hi)
+    val t = Math.fma(x, Log2e, Magic)
+    val nf = t - Magic
+    var r = Math.fma(nf, -Ln2Hi, x)
+    r = Math.fma(nf, -Ln2Lo, r)
+    var p = P0
+    p = Math.fma(p, r, P1); p = Math.fma(p, r, P2); p = Math.fma(p, r, P3); p = Math.fma(p, r, P4); p = Math.fma(p, r, P5)
+    val y = Math.fma(p, r * r, r) + 1f
+    val n = java.lang.Float.floatToRawIntBits(t) - MagicBits
+    val n1 = n >> 1
+    val n2 = n - n1
+    y * java.lang.Float.intBitsToFloat((n1 + 127) << 23) * java.lang.Float.intBitsToFloat((n2 + 127) << 23)
+
+  /** `1 / (1 + exp(-x))` as `(x >= 0 ? 1 : e) / (1 + e)` with `e = exp(-|x|)`. */
+  private def sigmoidV(x: FloatVector): FloatVector =
+    val e = expV(x.lanewise(VectorOperators.ABS).neg())
+    FloatVector.broadcast(S, 1f).blend(e, x.lt(0f)).div(e.add(1f))
+
+  private def sigmoidScalar(x: Float): Float =
+    val e = expScalar(-Math.abs(x))
+    (if x < 0f then e else 1f) / (e + 1f)
+
+  override protected def sigmoidImpl(x: MatrixF32, out: MatrixF32): Unit =
+    val bound = S.loopBound(x.cols)
+    var i = 0
+    while i < x.rows do
+      val xi = x.offset + i * x.rowStride
+      val oi = out.offset + i * out.rowStride
+      var j = 0
+      while j < bound do
+        sigmoidV(FloatVector.fromArray(S, x.data, xi + j)).intoArray(out.data, oi + j)
+        j += L
+      while j < x.cols do
+        out.data(oi + j) = sigmoidScalar(x.data(xi + j))
+        j += 1
+      i += 1
+
+  /** `x * sigmoid(x)`, with `silu(-inf) = -0` (the limit) instead of `-inf * 0 = NaN`. */
+  override protected def siluImpl(x: MatrixF32, out: MatrixF32): Unit =
+    val bound = S.loopBound(x.cols)
+    val negZero = FloatVector.broadcast(S, -0f)
+    var i = 0
+    while i < x.rows do
+      val xi = x.offset + i * x.rowStride
+      val oi = out.offset + i * out.rowStride
+      var j = 0
+      while j < bound do
+        val v = FloatVector.fromArray(S, x.data, xi + j)
+        v.mul(sigmoidV(v)).blend(negZero, v.eq(Float.NegativeInfinity)).intoArray(out.data, oi + j)
+        j += L
+      while j < x.cols do
+        val v = x.data(xi + j)
+        out.data(oi + j) = if v == Float.NegativeInfinity then -0f else v * sigmoidScalar(v)
+        j += 1
+      i += 1
+
+  /** Row log-sum-exp: lane-wise max, then `sum exp(x - max)` in Float32 lanes summed in a fixed order. */
+  override protected def rowLogSumExpImpl(x: MatrixF32, out: Array[Float], outOffset: Int): Unit =
+    val d = x.cols
+    val bound = S.loopBound(d)
+    var i = 0
+    while i < x.rows do
+      val xi = x.offset + i * x.rowStride
+      // max (Math.max semantics: NaN propagates, so a NaN anywhere makes mx NaN)
+      var mv = FloatVector.broadcast(S, Float.NegativeInfinity)
+      var j = 0
+      while j < bound do
+        mv = mv.max(FloatVector.fromArray(S, x.data, xi + j))
+        j += L
+      var mx = mv.lane(0)
+      var l = 1
+      while l < L do
+        mx = Math.max(mx, mv.lane(l))
+        l += 1
+      while j < d do
+        mx = Math.max(mx, x.data(xi + j))
+        j += 1
+      out(outOffset + i) =
+        if mx.isNaN || mx.isInfinite then mx // NaN row, +inf present, or all -inf / empty
+        else
+          val mxv = FloatVector.broadcast(S, mx)
+          var sv = FloatVector.zero(S)
+          j = 0
+          while j < bound do
+            sv = sv.add(expV(FloatVector.fromArray(S, x.data, xi + j).sub(mxv)))
+            j += L
+          var sum = sumLanes(sv)
+          while j < d do
+            sum += expScalar(x.data(xi + j) - mx)
+            j += 1
+          (mx + StrictMath.log(sum.toDouble)).toFloat // fdlibm: deterministic by specification
+      i += 1
+
   // ------------------------------------------------------------------ rows / elementwise / scan
 
   /** `y(yo until yo + n) += alpha * x(xo until xo + n)` with FMA. */
@@ -331,4 +454,19 @@ class VectorF32Kernels(val smallGemm: Long) extends ScalarF32Kernels:
       t += 1
 
 /** The default `vector25` backend: GEMMs below 2048 multiply-adds use the scalar loops. */
-object VectorF32Kernels extends VectorF32Kernels(2048L)
+object VectorF32Kernels extends VectorF32Kernels(2048L):
+  /** Constants of the Float32 `exp` (Cephes `expf` coefficients). */
+  private[vector25] object Exp:
+    final val Lo = -104f // exp(-104) rounds to 0
+    final val Hi = 89f // exp(89) overflows to +inf
+    final val Log2e = 1.44269504088896341f
+    final val Magic = 12582912f // 1.5 * 2^23: adding it rounds to an integer kept in the low mantissa bits
+    final val MagicBits = 0x4b400000
+    final val Ln2Hi = 0.693359375f
+    final val Ln2Lo = -2.12194440e-4f
+    final val P0 = 1.9875691500e-4f
+    final val P1 = 1.3981999507e-3f
+    final val P2 = 8.3334519073e-3f
+    final val P3 = 4.1665795894e-2f
+    final val P4 = 1.6666665459e-1f
+    final val P5 = 5.0000001201e-1f
