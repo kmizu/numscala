@@ -77,6 +77,12 @@ dtype ops: d.plus/minus/times/negate/power/sign (NumDType), d.abs/max/min/mod/fl
   (`vector25/.../Species.java`), otherwise HotSpot cannot intrinsify it and every vector is boxed.
   Never use `reduceLanes(ADD)` on floats: its order is unspecified and changes with the JIT tier; sum
   lanes in a fixed order instead (`DeterminismSuite`).
+* Kernel loops must run with an empty JVM operand stack. Never put a `while` loop, directly or through a
+  Scala `inline def`, inside an expression such as `a(i) += f(...)` or `out(i) = if ... else { loop }`;
+  compute into a local first. Otherwise HotSpot cannot OSR-compile the loop, and it may leave the whole
+  method on C1, where the Vector API is not intrinsified (seen as one JMH fork in five being ~60x slower).
+  Check with `sbt 'set vector25/Test/javaOptions += "-XX:+PrintCompilation"' vector25/test` and grep
+  for `non-empty stack` / `stack not empty`.
 * Keep files under ~800 lines; split a module into several files if needed.
 * Scaladoc every public function in one or two lines, naming the NumPy equivalent.
 * Differential tests against NumPy: `python3 project/difftest/gen_difftest.py [seed] [scale]`
