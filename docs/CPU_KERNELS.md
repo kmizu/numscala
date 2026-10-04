@@ -53,10 +53,13 @@ checkpoints. For example `scatterAddRowsInto` exists, but whether a row then get
   `new Workspace(debug = true)` throws when a thread uses a workspace while another thread's kernel
   call holds it. Handing a workspace to another thread between calls (thread pools) is fine.
 * **Threads.** Kernels are single-threaded and never create pools; callers split work across their
-  own workers. `gemmRowsInto(..., rowFrom, rowUntil, ws)` computes a row slice of C with exactly the
-  bits the whole `gemmInto` would give those rows. `ParallelF32.gemmInto(kernels, executor, workspaces, ...)`
-  uses that to split C's rows over a caller-owned `ExecutorService`, one workspace per task. The result
-  is bit-identical for any number of tasks, so training can be independent of the worker count.
+  own workers. `gemmTileInto(..., rowFrom, rowUntil, colFrom, colUntil, ws)` (and its row-only form
+  `gemmRowsInto`) computes a tile of C with exactly the bits the whole `gemmInto` would give it.
+  `ParallelF32.gemmInto(kernels, executor, workspaces, ...)` cuts C into a rows x columns grid
+  (`ParallelF32.tileGrid`) over a caller-owned `ExecutorService`, one workspace per task. GEMVs and
+  products with few rows are split by columns. Products below `minWork` (default 4M multiply-adds) run on
+  the calling thread, because handing work to pool threads costs a fixed 60–90 us per call. The result is
+  bit-identical for any number of tasks, so training can be independent of the worker count.
 * **Numerics.** Computation is Float32. The scalar backend's row reductions accumulate in Double.
   Backends may differ in rounding (FMA, summation order); bit equality between backends is not promised.
   The tests use the componentwise bound `1e-6 + 4 γ(2K+4) (|alpha| Σ|a b| + |beta c|)`.
@@ -78,8 +81,9 @@ choice. Asking for `vector25` when it cannot load throws with that reason. Only 
 once from the system property `numscala.cpu.backend` (default `scalar`) and is what `np.matmul` uses
 for float32. `KernelDiagnostics.report(selection, workspace)` gives one line for logs and benchmark records.
 
-The vector backend uses `FloatVector.SPECIES_PREFERRED` (8 lanes on AVX2) with FMA. GEMM uses a 4x2
-register-blocked micro-kernel for NN/TN/TT and a 2x4 dot-product block for NT. Every lane reduction
+The vector backend uses `FloatVector.SPECIES_PREFERRED` (8 lanes on AVX2) with FMA. GEMM uses 6x2 / 4x2
+register-blocked micro-kernels for NN/TN/TT (about 80 GFLOP/s single-threaded on a Ryzen 9 5900X) and a
+2x4 dot-product block for NT. Every lane reduction
 sums in a fixed order (never `reduceLanes`). sigmoid, SiLU and log-sum-exp use a vectorised Float32
 `exp` built only from exactly specified lanewise operations (Cephes-style reduction and polynomial,
 about 2 ulp). sigmoid/SiLU are within 5e-7 relative of the Double reference while `sigmoid(x)` is a
@@ -100,4 +104,6 @@ release still build only `numscala`.
 
 ## Measured performance
 
-See [perf/NS-CPU-001-report.md](perf/NS-CPU-001-report.md).
+See [perf/0.5.0-report.md](perf/0.5.0-report.md) (and the earlier [0.4.0](perf/0.4.0-report.md) and
+[0.3.0](perf/NS-CPU-001-report.md) reports). To check that a change keeps results bit-identical to a
+release, use [tools/bitcheck](../tools/bitcheck/README.md).

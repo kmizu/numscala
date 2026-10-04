@@ -180,8 +180,9 @@ dtypes go through boxed element access and are several times slower. Run
 small model's training loop: `gemmInto` into caller-owned buffers, row gather/scatter-add/coalesce,
 sigmoid/SiLU, stable row log-sum-exp, an elementwise affine scan, and worker-owned `Workspace`s that
 report how much was allocated, packed and converted. `np.matmul` on float32 uses them directly on the
-arrays' buffers (transposed and gapped views included) instead of copying. `ParallelF32.gemmInto` splits a
-GEMM over your own `ExecutorService` with results that do not depend on the worker count. An optional
+arrays' buffers (transposed and gapped views included) instead of copying. `ParallelF32.gemmInto` tiles a
+GEMM over your own `ExecutorService` (rows x columns, so GEMVs parallelise too), with results that do not
+depend on the worker count. An optional
 JDK 25 Vector API backend (about 6x the scalar GEMM) ships as a separate artifact,
 `"com.github.kmizu" %% "numscala-vector25"`; run with `--add-modules=jdk.incubator.vector
 -Dnumscala.cpu.backend=vector25`. See [docs/CPU_KERNELS.md](docs/CPU_KERNELS.md).
