@@ -58,14 +58,26 @@ class VectorF32Kernels(val smallGemm: Long) extends ScalarF32Kernels:
       case (Transpose.Yes, Transpose.Yes) => panels(a.data, a.offset, 1, a.rowStride, packTransposed(b, k, n, ws), c, m, n, k, alpha)
 
   /** `C += alpha * A B` where `A(i, p) = ad(ao + i * ai + p * ap)` and B is row-major.
-    * Column panels of width `2L` outermost (the B panel stays in L1/L2), 4-row register blocks inside.
+    * Column panels of width `2L` outermost (the B panel stays in L1/L2), 6-row (then 4-row, 1-row) register blocks inside.
     */
   private def panels(ad: Array[Float], ao: Int, ai: Int, ap: Int, b: MatrixF32, c: MatrixF32, m: Int, n: Int, k: Int, alpha: Float): Unit =
     val av = FloatVector.broadcast(S, alpha)
     val full2 = n - n % (2 * L)
+    // as many 6-row blocks as possible while leaving the fewest rows for the slow 1-row blocks (8 = 4 + 4, not 6 + 1 + 1)
+    var sixes = m / 6
+    var bestSixes = sixes
+    var bestRest = Int.MaxValue
+    while sixes >= 0 do
+      val rest = (m - 6 * sixes) % 4
+      if rest < bestRest then { bestRest = rest; bestSixes = sixes }
+      sixes -= 1
+    val rows6 = 6 * bestSixes
     var j = 0
     while j < full2 do
       var i = 0
+      while i < rows6 do
+        block6x2(ad, ao, ai, ap, b, c, i, j, k, av)
+        i += 6
       while i + 3 < m do
         block4x2(ad, ao, ai, ap, b, c, i, j, k, av)
         i += 4
@@ -83,6 +95,42 @@ class VectorF32Kernels(val smallGemm: Long) extends ScalarF32Kernels:
         block1x1(ad, ao, ai, ap, b, c, i, j, k, av, mask)
         i += 1
       j += L
+
+  /** 6 rows x 2 vectors: 12 accumulators + 2 B vectors + 1 broadcast fit the 16 vector registers of AVX2. */
+  private def block6x2(ad: Array[Float], ao: Int, ai: Int, ap: Int, b: MatrixF32, c: MatrixF32, i: Int, j: Int, k: Int, alpha: FloatVector): Unit =
+    val bd = b.data
+    var c00 = FloatVector.zero(S); var c01 = FloatVector.zero(S)
+    var c10 = FloatVector.zero(S); var c11 = FloatVector.zero(S)
+    var c20 = FloatVector.zero(S); var c21 = FloatVector.zero(S)
+    var c30 = FloatVector.zero(S); var c31 = FloatVector.zero(S)
+    var c40 = FloatVector.zero(S); var c41 = FloatVector.zero(S)
+    var c50 = FloatVector.zero(S); var c51 = FloatVector.zero(S)
+    val r0 = ao + i * ai
+    var p = 0
+    while p < k do
+      val bo = b.offset + p * b.rowStride + j
+      val b0 = FloatVector.fromArray(S, bd, bo)
+      val b1 = FloatVector.fromArray(S, bd, bo + L)
+      val ab = r0 + p * ap
+      var x = FloatVector.broadcast(S, ad(ab))
+      c00 = x.fma(b0, c00); c01 = x.fma(b1, c01)
+      x = FloatVector.broadcast(S, ad(ab + ai))
+      c10 = x.fma(b0, c10); c11 = x.fma(b1, c11)
+      x = FloatVector.broadcast(S, ad(ab + 2 * ai))
+      c20 = x.fma(b0, c20); c21 = x.fma(b1, c21)
+      x = FloatVector.broadcast(S, ad(ab + 3 * ai))
+      c30 = x.fma(b0, c30); c31 = x.fma(b1, c31)
+      x = FloatVector.broadcast(S, ad(ab + 4 * ai))
+      c40 = x.fma(b0, c40); c41 = x.fma(b1, c41)
+      x = FloatVector.broadcast(S, ad(ab + 5 * ai))
+      c50 = x.fma(b0, c50); c51 = x.fma(b1, c51)
+      p += 1
+    store2(c, i, j, c00, c01, alpha)
+    store2(c, i + 1, j, c10, c11, alpha)
+    store2(c, i + 2, j, c20, c21, alpha)
+    store2(c, i + 3, j, c30, c31, alpha)
+    store2(c, i + 4, j, c40, c41, alpha)
+    store2(c, i + 5, j, c50, c51, alpha)
 
   private def block4x2(ad: Array[Float], ao: Int, ai: Int, ap: Int, b: MatrixF32, c: MatrixF32, i: Int, j: Int, k: Int, alpha: FloatVector): Unit =
     val bd = b.data
