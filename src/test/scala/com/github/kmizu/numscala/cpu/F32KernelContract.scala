@@ -225,18 +225,58 @@ abstract class F32KernelContract(kernels: F32Kernels) extends munit.FunSuite:
     )
   }
 
+  test("gemmTileInto: any tiling reproduces the full product bit for bit; a tile touches nothing else") {
+    val rnd = new Random(22)
+    for (ta, tb) <- transposes; (m, n, k) <- Seq((1, 45, 16), (13, 37, 29), (64, 100, 96), (9, 3, 5)) do
+      val (ar, ac) = phys(m, k, ta); val (br, bc) = phys(k, n, tb)
+      val a = randomMatrix(rnd, ar, ac, 1, 1); val b = randomMatrix(rnd, br, bc, 0, 2)
+      val c0 = randomMatrix(rnd, m, n, 0, 3)
+      def fresh() = MatrixF32(c0.data.clone(), c0.offset, m, n, c0.rowStride)
+      val full = fresh()
+      kernels.gemmInto(a, ta, b, tb, full, 0.5f, 1.5f, new Workspace(k * n))
+      for trial <- 0 until 3 do
+        def cuts(len: Int) = (Seq(0, len) ++ Seq.fill(2)(rnd.nextInt(len + 1))).distinct.sorted
+        val rc = cuts(m); val cc = cuts(n)
+        val tiled = fresh()
+        for (r0, r1) <- rc.zip(rc.tail); (c0_, c1) <- cc.zip(cc.tail) do
+          kernels.gemmTileInto(a, ta, b, tb, tiled, 0.5f, 1.5f, r0, r1, c0_, c1, new Workspace(k * n))
+        assertEquals(bitsOf(tiled), bitsOf(full), s"$m x $n x $k $ta$tb rows $rc cols $cc")
+      val one = fresh()
+      val (r0, r1, q0, q1) = (m / 3, m / 3 + 1, n / 4, n / 4 + math.min(n, 3))
+      kernels.gemmTileInto(a, ta, b, tb, one, 0.5f, 1.5f, r0, r1, q0, math.min(q1, n), new Workspace(k * n))
+      for i <- 0 until m; j <- 0 until n do
+        val inside = i >= r0 && i < r1 && j >= q0 && j < math.min(q1, n)
+        val want = if inside then full(i, j) else c0(i, j)
+        assertEquals(java.lang.Float.floatToRawIntBits(one(i, j)), java.lang.Float.floatToRawIntBits(want), s"($i,$j)")
+      assert(one.data(one.offset + one.cols).isNaN || m == 1, "row padding written")
+    intercept[IllegalArgumentException](
+      kernels.gemmTileInto(MatrixF32.zeros(2, 2), T.No, MatrixF32.zeros(2, 2), T.No, MatrixF32.zeros(2, 2), 1f, 0f, 0, 2, 1, 3, new Workspace())
+    )
+  }
+
+  test("ParallelF32.tileGrid: GEMVs split by columns, tall products by rows, the grid never exceeds the blocks") {
+    assertEquals(ParallelF32.tileGrid(1, 768, 384, 12), (1, 12))
+    assertEquals(ParallelF32.tileGrid(1, 100, 384, 12), (1, 7)) // only 7 column blocks of 16
+    assertEquals(ParallelF32.tileGrid(512, 16, 384, 6), (6, 1)) // one column block: rows only
+    assertEquals(ParallelF32.tileGrid(512, 384, 384, 6), (2, 3)) // smaller largest tile and less traffic than (6, 1)
+    for m <- Seq(0, 1, 7, 64, 128, 512); n <- Seq(0, 1, 40, 384, 768); tasks <- Seq(1, 2, 6, 7, 12, 24) do
+      val (pr, pc) = ParallelF32.tileGrid(m, n, 64, tasks)
+      assert(pr >= 1 && pc >= 1 && pr <= math.max(1, (m + 3) / 4) && pc <= math.max(1, (n + 15) / 16), s"$m $n $tasks -> ($pr,$pc)")
+    assertEquals(ParallelF32.colBounds(40, 2).toSeq, Seq(0, 16, 40))
+  }
+
   test("ParallelF32: results are bit-identical to single-threaded for any number of tasks") {
     val rnd = new Random(21)
     val pool = java.util.concurrent.Executors.newFixedThreadPool(6)
     try
-      for (ta, tb) <- transposes; (m, n, k) <- Seq((8, 16, 16), (37, 45, 70), (130, 64, 48)) do
+      for (ta, tb) <- transposes; (m, n, k) <- Seq((8, 16, 16), (37, 45, 70), (130, 64, 48), (1, 300, 64), (6, 500, 33)) do
         val (ar, ac) = phys(m, k, ta); val (br, bc) = phys(k, n, tb)
         val a = randomMatrix(rnd, ar, ac); val b = randomMatrix(rnd, br, bc)
         val ref = MatrixF32.zeros(m, n)
         kernels.gemmInto(a, ta, b, tb, ref, new Workspace(k * n))
         for tasks <- Seq(1, 2, 3, 6, 7, 40) do
           val c = MatrixF32.wrap(Array.fill(m * n)(Float.NaN), m, n)
-          ParallelF32.gemmInto(kernels, pool, IndexedSeq.fill(tasks)(new Workspace(k * n)), a, ta, b, tb, c, 1f, 0f)
+          ParallelF32.gemmInto(kernels, pool, IndexedSeq.fill(tasks)(new Workspace(k * n)), a, ta, b, tb, c, 1f, 0f, minWork = 0L)
           assertEquals(bitsOf(c), bitsOf(ref), s"$m x $n x $k $ta$tb tasks=$tasks")
       assertEquals(ParallelF32.rowBounds(10, 3).toSeq, Seq(0, 4, 8, 10))
       assertEquals(ParallelF32.rowBounds(3, 4).toSeq, Seq(0, 0, 0, 0, 3))
@@ -254,15 +294,21 @@ abstract class F32KernelContract(kernels: F32Kernels) extends munit.FunSuite:
       intercept[IllegalArgumentException](ParallelF32.gemmInto(kernels, pool, IndexedSeq(ws), a, T.No, MatrixF32.zeros(4, 4), T.No, c, 1f, 0f))
       // TT needs k * n floats in every workspace: checked for all tasks first
       intercept[IllegalStateException](
-        ParallelF32.gemmInto(kernels, pool, IndexedSeq(new Workspace(32), new Workspace(0)), MatrixF32.zeros(8, 16), T.Yes, MatrixF32.zeros(4, 8), T.Yes, c, 1f, 0f)
+        ParallelF32.gemmInto(kernels, pool, IndexedSeq(new Workspace(32), new Workspace(0)), MatrixF32.zeros(8, 16), T.Yes, MatrixF32.zeros(4, 8), T.Yes, c, 1f, 0f, minWork = 0L)
       )
       assert(c.toArray.forall(_ == 5f))
       // a rejected submission is reported after the tasks already running have finished
       val closed = java.util.concurrent.Executors.newSingleThreadExecutor()
       closed.shutdown()
       intercept[java.util.concurrent.RejectedExecutionException](
-        ParallelF32.gemmInto(kernels, closed, IndexedSeq(new Workspace(), new Workspace()), a, T.No, b, T.No, c, 1f, 0f)
+        ParallelF32.gemmInto(kernels, closed, IndexedSeq(new Workspace(), new Workspace()), a, T.No, b, T.No, c, 1f, 0f, minWork = 0L)
       )
+      // below minWork the call runs on the caller thread only: a shut-down executor is never touched
+      val small = MatrixF32.zeros(16, 4)
+      ParallelF32.gemmInto(kernels, closed, IndexedSeq(new Workspace(), new Workspace()), a, T.No, b, T.No, small, 1f, 0f)
+      val ref = MatrixF32.zeros(16, 4)
+      kernels.gemmInto(a, T.No, b, T.No, ref, new Workspace())
+      assertEquals(bitsOf(small), bitsOf(ref))
     finally pool.shutdown()
   }
 

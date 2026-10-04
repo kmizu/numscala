@@ -20,7 +20,7 @@ class ParallelGemmBench:
   @Param(Array("1", "6", "12", "24"))
   var workers: Int = uninitialized
 
-  @Param(Array("128x768x384-NN", "512x384x384-NN", "512x384x768-NT", "384x768x512-TN"))
+  @Param(Array("128x768x384-NN", "512x384x384-NN", "512x384x768-NT", "384x768x512-TN", "64x384x384-NT", "1x768x384-NN", "1x16384x384-NN"))
   var shape: String = uninitialized
 
   @Param(Array("vector25"))

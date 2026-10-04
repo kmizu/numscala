@@ -34,7 +34,7 @@ trait F32Kernels:
   ): Unit =
     checkGemm(a, transA, b, transB, c)
     val m = c.rows; val n = c.cols; val k = a.logicalCols(transA)
-    runGemm(a, transA, b, transB, c, m, n, k, alpha, beta, workspace, m)
+    runGemm(a, transA, b, transB, c, m, n, k, alpha, beta, workspace, m, n)
 
   /** Rows `[rowFrom, rowUntil)` of [[gemmInto]]: those rows of C get exactly the bits the full call would give them
     * (same kernel choice, same per-element operation order), and no other row is read or written. Splitting C's rows
@@ -48,15 +48,37 @@ trait F32Kernels:
       rowFrom: Int, rowUntil: Int,
       workspace: Workspace
   ): Unit =
+    gemmTileInto(a, transA, b, transB, c, alpha, beta, rowFrom, rowUntil, 0, c.cols, workspace)
+
+  /** The tile `[rowFrom, rowUntil) x [colFrom, colUntil)` of [[gemmInto]]: those elements of C get exactly the bits
+    * the full call would give them, and no other element of C is read or written. Any partition of C into tiles,
+    * computed in any order or on any threads, reproduces the single-call result bit for bit.
+    */
+  final def gemmTileInto(
+      a: MatrixF32, transA: Transpose,
+      b: MatrixF32, transB: Transpose,
+      c: MatrixF32,
+      alpha: Float, beta: Float,
+      rowFrom: Int, rowUntil: Int, colFrom: Int, colUntil: Int,
+      workspace: Workspace
+  ): Unit =
     checkGemm(a, transA, b, transB, c)
     val m = c.rows; val n = c.cols; val k = a.logicalCols(transA)
     if rowFrom < 0 || rowUntil < rowFrom || rowUntil > m then
-      throw new IllegalArgumentException(s"gemmRowsInto: row range [$rowFrom, $rowUntil) is outside C's $m rows")
+      throw new IllegalArgumentException(s"gemmTileInto: row range [$rowFrom, $rowUntil) is outside C's $m rows")
+    if colFrom < 0 || colUntil < colFrom || colUntil > n then
+      throw new IllegalArgumentException(s"gemmTileInto: column range [$colFrom, $colUntil) is outside C's $n columns")
     val rows = rowUntil - rowFrom
+    val cols = colUntil - colFrom
+    if rows == 0 || cols == 0 then return
     val subA =
       if transA == Transpose.No then a.rowRange(rowFrom, rowUntil)
-      else MatrixF32(a.data, if rows == 0 then a.offset else a.offset + rowFrom, a.rows, rows, a.rowStride)
-    runGemm(subA, transA, b, transB, c.rowRange(rowFrom, rowUntil), rows, n, k, alpha, beta, workspace, m)
+      else MatrixF32(a.data, a.offset + rowFrom, a.rows, rows, a.rowStride)
+    val subB =
+      if transB == Transpose.Yes then b.rowRange(colFrom, colUntil)
+      else MatrixF32(b.data, b.offset + colFrom, b.rows, cols, b.rowStride)
+    val subC = MatrixF32(c.data, c.offset + rowFrom * c.rowStride + colFrom, rows, cols, c.rowStride)
+    runGemm(subA, transA, subB, transB, subC, rows, cols, k, alpha, beta, workspace, m, n)
 
   /** Validates a GEMM call (shapes, bounds, aliasing) without computing anything; throws like [[gemmInto]]. */
   final def checkGemm(a: MatrixF32, transA: Transpose, b: MatrixF32, transB: Transpose, c: MatrixF32): Unit =
@@ -75,7 +97,7 @@ trait F32Kernels:
 
   private def runGemm(
       a: MatrixF32, transA: Transpose, b: MatrixF32, transB: Transpose, c: MatrixF32,
-      m: Int, n: Int, k: Int, alpha: Float, beta: Float, workspace: Workspace, dispatchM: Int
+      m: Int, n: Int, k: Int, alpha: Float, beta: Float, workspace: Workspace, dispatchM: Int, dispatchN: Int
   ): Unit =
     if m == 0 || n == 0 then return
     val readsAB = k != 0 && alpha != 0f
@@ -84,7 +106,7 @@ trait F32Kernels:
     try
       workspace.require(need, 0, "gemmInto")
       val mk = workspace.mark
-      try gemmImpl(a, transA, b, transB, c, m, n, k, alpha, beta, readsAB, workspace, dispatchM)
+      try gemmImpl(a, transA, b, transB, c, m, n, k, alpha, beta, readsAB, workspace, dispatchM, dispatchN)
       finally workspace.release(mk)
     finally workspace.exit()
 
@@ -97,12 +119,13 @@ trait F32Kernels:
     if transA == Transpose.Yes && transB == Transpose.Yes then Math.multiplyExact(k, n) else 0
 
   /** Backend GEMM on validated arguments. `readsAB == false` means: only apply `beta` to C.
-    * `dispatchM` is the row count of the whole product (larger than `m` for a [[gemmRowsInto]] slice);
-    * backends must choose their kernel from `(dispatchM, n, k)` so that slices compute like the full call.
+    * `dispatchM` / `dispatchN` are the shape of the whole product (larger than `m` / `n` for a [[gemmTileInto]]
+    * tile); backends must choose their kernel from `(dispatchM, dispatchN, k)` so that tiles compute like the full
+    * call.
     */
   protected def gemmImpl(
       a: MatrixF32, transA: Transpose, b: MatrixF32, transB: Transpose, c: MatrixF32,
-      m: Int, n: Int, k: Int, alpha: Float, beta: Float, readsAB: Boolean, ws: Workspace, dispatchM: Int
+      m: Int, n: Int, k: Int, alpha: Float, beta: Float, readsAB: Boolean, ws: Workspace, dispatchM: Int, dispatchN: Int
   ): Unit
 
   // ------------------------------------------------------------------ K2: sparse rows
