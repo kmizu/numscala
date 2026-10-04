@@ -10,6 +10,8 @@ rows = json.load(open(sys.argv[1]))
 
 def key(r):
     p = r.get("params", {})
+    if "workers" in p:
+        return "ParallelGemmBench", p["shape"], int(p["workers"])
     return r["benchmark"].rsplit(".", 2)[-2], r["benchmark"].rsplit(".", 1)[-1], p.get("shape") or p.get("backend")
 
 res = {}
@@ -75,3 +77,18 @@ allr = list(sv.values()) + list(kv.values())
 print(f"\nGate input (NS-CPU-001 §9.3): geometric mean of vector25/scalar over all {len(allr)} workloads = "
       f"**{geomean(allr):.2f}x**; worst workload = **{min(allr):.2f}x** "
       f"({min(list(sv.items()) + list(kv.items()), key=lambda t: t[1])[0]}).")
+
+par = sorted({(s, w) for (c, s, w) in res if c == "ParallelGemmBench"})
+if par:
+    shapes_p = sorted({s for s, _ in par})
+    workers = sorted({w for _, w in par})
+    print("\n### Parallel GEMM (ParallelF32.gemmInto, vector25; median us/op, GFLOP/s, speedup vs 1 worker)\n")
+    print("| shape | " + " | ".join(f"{w} worker{'s' if w > 1 else ''}" for w in workers) + " |")
+    print("|---|" + "---:|" * len(workers))
+    for sh in shapes_p:
+        base = res[("ParallelGemmBench", sh, workers[0])]["med"]
+        cells = []
+        for w in workers:
+            r = res.get(("ParallelGemmBench", sh, w))
+            cells.append("-" if r is None else f"{fmt(r['med'])} us, {flops(sh) / (r['med'] * 1e3):.0f} GF/s, {base / r['med']:.2f}x")
+        print(f"| {sh} | " + " | ".join(cells) + " |")
