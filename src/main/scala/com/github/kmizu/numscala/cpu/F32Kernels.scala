@@ -32,6 +32,34 @@ trait F32Kernels:
       alpha: Float, beta: Float,
       workspace: Workspace
   ): Unit =
+    checkGemm(a, transA, b, transB, c)
+    val m = c.rows; val n = c.cols; val k = a.logicalCols(transA)
+    runGemm(a, transA, b, transB, c, m, n, k, alpha, beta, workspace, m)
+
+  /** Rows `[rowFrom, rowUntil)` of [[gemmInto]]: those rows of C get exactly the bits the full call would give them
+    * (same kernel choice, same per-element operation order), and no other row is read or written. Splitting C's rows
+    * over workers with this method therefore gives results that do not depend on the number of workers.
+    */
+  final def gemmRowsInto(
+      a: MatrixF32, transA: Transpose,
+      b: MatrixF32, transB: Transpose,
+      c: MatrixF32,
+      alpha: Float, beta: Float,
+      rowFrom: Int, rowUntil: Int,
+      workspace: Workspace
+  ): Unit =
+    checkGemm(a, transA, b, transB, c)
+    val m = c.rows; val n = c.cols; val k = a.logicalCols(transA)
+    if rowFrom < 0 || rowUntil < rowFrom || rowUntil > m then
+      throw new IllegalArgumentException(s"gemmRowsInto: row range [$rowFrom, $rowUntil) is outside C's $m rows")
+    val rows = rowUntil - rowFrom
+    val subA =
+      if transA == Transpose.No then a.rowRange(rowFrom, rowUntil)
+      else MatrixF32(a.data, if rows == 0 then a.offset else a.offset + rowFrom, a.rows, rows, a.rowStride)
+    runGemm(subA, transA, b, transB, c.rowRange(rowFrom, rowUntil), rows, n, k, alpha, beta, workspace, m)
+
+  /** Validates a GEMM call (shapes, bounds, aliasing) without computing anything; throws like [[gemmInto]]. */
+  final def checkGemm(a: MatrixF32, transA: Transpose, b: MatrixF32, transB: Transpose, c: MatrixF32): Unit =
     a.validate("gemmInto: A")
     b.validate("gemmInto: B")
     c.validate("gemmInto: C")
@@ -44,13 +72,21 @@ trait F32Kernels:
       throw new IllegalArgumentException(s"gemmInto: C is ${c.rows} x ${c.cols}, expected $m x $n")
     if MatrixF32.overlaps(c, a) then throw new IllegalArgumentException("gemmInto: C overlaps A")
     if MatrixF32.overlaps(c, b) then throw new IllegalArgumentException("gemmInto: C overlaps B")
+
+  private def runGemm(
+      a: MatrixF32, transA: Transpose, b: MatrixF32, transB: Transpose, c: MatrixF32,
+      m: Int, n: Int, k: Int, alpha: Float, beta: Float, workspace: Workspace, dispatchM: Int
+  ): Unit =
     if m == 0 || n == 0 then return
     val readsAB = k != 0 && alpha != 0f
     val need = if readsAB then gemmWorkspaceFloats(m, n, k, transA, transB) else 0
-    workspace.require(need, 0, "gemmInto")
-    val mk = workspace.mark
-    try gemmImpl(a, transA, b, transB, c, m, n, k, alpha, beta, readsAB, workspace)
-    finally workspace.release(mk)
+    workspace.enter()
+    try
+      workspace.require(need, 0, "gemmInto")
+      val mk = workspace.mark
+      try gemmImpl(a, transA, b, transB, c, m, n, k, alpha, beta, readsAB, workspace, dispatchM)
+      finally workspace.release(mk)
+    finally workspace.exit()
 
   /** `C := op(A) * op(B)` (`alpha = 1`, `beta = 0`). */
   final def gemmInto(a: MatrixF32, transA: Transpose, b: MatrixF32, transB: Transpose, c: MatrixF32, workspace: Workspace): Unit =
@@ -60,10 +96,13 @@ trait F32Kernels:
   def gemmWorkspaceFloats(m: Int, n: Int, k: Int, transA: Transpose, transB: Transpose): Int =
     if transA == Transpose.Yes && transB == Transpose.Yes then Math.multiplyExact(k, n) else 0
 
-  /** Backend GEMM on validated arguments. `readsAB == false` means: only apply `beta` to C. */
+  /** Backend GEMM on validated arguments. `readsAB == false` means: only apply `beta` to C.
+    * `dispatchM` is the row count of the whole product (larger than `m` for a [[gemmRowsInto]] slice);
+    * backends must choose their kernel from `(dispatchM, n, k)` so that slices compute like the full call.
+    */
   protected def gemmImpl(
       a: MatrixF32, transA: Transpose, b: MatrixF32, transB: Transpose, c: MatrixF32,
-      m: Int, n: Int, k: Int, alpha: Float, beta: Float, readsAB: Boolean, ws: Workspace
+      m: Int, n: Int, k: Int, alpha: Float, beta: Float, readsAB: Boolean, ws: Workspace, dispatchM: Int
   ): Unit
 
   // ------------------------------------------------------------------ K2: sparse rows
@@ -121,10 +160,13 @@ trait F32Kernels:
       outIdsOffset < idsOffset + count && idsOffset < outIds.length
     then throw new IllegalArgumentException("coalesceRowsInto: outIds overlaps ids")
     if MatrixF32.overlaps(outValues, values) then throw new IllegalArgumentException("coalesceRowsInto: outValues overlaps values")
-    workspace.require(0, count, "coalesceRowsInto")
-    val mk = workspace.mark
-    try RowOps.coalesce(ids, idsOffset, count, values, outIds, outIdsOffset, outValues, workspace)
-    finally workspace.release(mk)
+    workspace.enter()
+    try
+      workspace.require(0, count, "coalesceRowsInto")
+      val mk = workspace.mark
+      try RowOps.coalesce(ids, idsOffset, count, values, outIds, outIdsOffset, outValues, workspace)
+      finally workspace.release(mk)
+    finally workspace.exit()
 
   /** [[coalesceRowsInto]] over all of `ids`, writing IDs from `outIds(0)`. */
   final def coalesceRowsInto(ids: Array[Int], values: MatrixF32, outIds: Array[Int], outValues: MatrixF32, workspace: Workspace): Int =

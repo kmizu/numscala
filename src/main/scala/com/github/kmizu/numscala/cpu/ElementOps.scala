@@ -94,16 +94,16 @@ private[cpu] object ElementOps:
         if v != v then nan = true
         else if v > mx then mx = v
         j += 1
-      out(outOffset + i) =
-        if nan then Float.NaN
-        else if mx == Float.PositiveInfinity || mx == Float.NegativeInfinity then mx // +inf present, or all -inf / empty
-        else
-          var s = 0.0
-          j = 0
-          while j < x.cols do
-            s += math.exp((xd(xi + j) - mx).toDouble)
-            j += 1
-          (mx + math.log(s)).toFloat
+      // computed into a local first: loops inside `out(..) = <expr>` would run with a non-empty operand stack
+      var res = if nan then Float.NaN else mx // NaN row, +inf present, or all -inf / empty
+      if !nan && mx != Float.PositiveInfinity && mx != Float.NegativeInfinity then
+        var s = 0.0
+        j = 0
+        while j < x.cols do
+          s += math.exp((xd(xi + j) - mx).toDouble)
+          j += 1
+        res = (mx + math.log(s)).toFloat
+      out(outOffset + i) = res
       i += 1
 
   /** Sum of squares per row (accumulated in Double). */

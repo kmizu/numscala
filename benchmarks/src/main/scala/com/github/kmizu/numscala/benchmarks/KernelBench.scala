@@ -71,3 +71,13 @@ class KernelBench:
   def axpy512x384(bh: Blackhole): Unit =
     k.axpyInto(0.001f, rows, outRows)
     bh.consume(outRows.data)
+
+  @Benchmark
+  def sigmoid512x384(bh: Blackhole): Unit =
+    k.sigmoidInto(rows, outRows)
+    bh.consume(outRows.data)
+
+  @Benchmark
+  def silu512x384(bh: Blackhole): Unit =
+    k.siluInto(rows, outRows)
+    bh.consume(outRows.data)

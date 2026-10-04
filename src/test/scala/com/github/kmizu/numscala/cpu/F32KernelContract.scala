@@ -183,16 +183,87 @@ abstract class F32KernelContract(kernels: F32Kernels) extends munit.FunSuite:
     assertEquals(ws.growCount, 0)
   }
 
-  test("workspace: debug mode rejects use from a second thread") {
+  test("workspace: debug mode rejects concurrent use but allows handing over between calls") {
     val ws = new Workspace(debug = true)
-    kernels.gemmInto(MatrixF32.zeros(1, 1), T.No, MatrixF32.zeros(1, 1), T.No, MatrixF32.zeros(1, 1), ws)
-    var err: Throwable | Null = null
-    val th = new Thread(() =>
-      try kernels.gemmInto(MatrixF32.zeros(1, 1), T.No, MatrixF32.zeros(1, 1), T.No, MatrixF32.zeros(1, 1), ws)
-      catch case e: Throwable => err = e
+    def call() = kernels.gemmInto(MatrixF32.zeros(1, 1), T.No, MatrixF32.zeros(1, 1), T.No, MatrixF32.zeros(1, 1), ws)
+    call()
+    def onOtherThread(): Throwable | Null =
+      var err: Throwable | Null = null
+      val th = new Thread(() => try call() catch case e: Throwable => err = e)
+      th.start(); th.join()
+      err
+    assertEquals(onOtherThread(), null) // sequential hand-over (e.g. a thread pool) is fine
+    ws.enter() // this thread is now inside a kernel call holding the workspace
+    try assert(onOtherThread().isInstanceOf[IllegalStateException])
+    finally ws.exit()
+    assertEquals(onOtherThread(), null)
+  }
+
+  // ------------------------------------------------------------------ row slices and parallel GEMM
+
+  private def bitsOf(m: MatrixF32): Seq[Int] = m.toArray.toSeq.map(java.lang.Float.floatToRawIntBits)
+
+  test("gemmRowsInto: slices reproduce the full product bit for bit and touch no other row") {
+    val rnd = new Random(20)
+    for (ta, tb) <- transposes; (m, n, k) <- Seq((8, 16, 16), (13, 37, 29), (64, 40, 96)) do
+      val (ar, ac) = phys(m, k, ta); val (br, bc) = phys(k, n, tb)
+      val a = randomMatrix(rnd, ar, ac, 1, 1); val b = randomMatrix(rnd, br, bc, 0, 2)
+      val c0 = randomMatrix(rnd, m, n, 0, 1)
+      val full = MatrixF32(c0.data.clone(), c0.offset, m, n, c0.rowStride)
+      kernels.gemmInto(a, ta, b, tb, full, 0.5f, 1.5f, new Workspace(k * n))
+      val sliced = MatrixF32(c0.data.clone(), c0.offset, m, n, c0.rowStride)
+      val cuts = Seq(0, 1, 4, 5, m / 2, m).distinct.sorted.filter(_ <= m)
+      cuts.zip(cuts.tail).foreach((f, u) => kernels.gemmRowsInto(a, ta, b, tb, sliced, 0.5f, 1.5f, f, u, new Workspace(k * n)))
+      assertEquals(bitsOf(sliced), bitsOf(full), s"$m x $n x $k $ta$tb")
+      // a slice leaves every other row (and the padding) alone
+      val one = MatrixF32(c0.data.clone(), c0.offset, m, n, c0.rowStride)
+      kernels.gemmRowsInto(a, ta, b, tb, one, 0.5f, 1.5f, 2, 3, new Workspace(k * n))
+      for i <- 0 until m if i != 2 do assertEquals(bitsOf(one.row(i)), bitsOf(c0.row(i)))
+      assertEquals(bitsOf(one.row(2)), bitsOf(full.row(2)))
+    intercept[IllegalArgumentException](
+      kernels.gemmRowsInto(MatrixF32.zeros(2, 2), T.No, MatrixF32.zeros(2, 2), T.No, MatrixF32.zeros(2, 2), 1f, 0f, 1, 3, new Workspace())
     )
-    th.start(); th.join()
-    assert(err.isInstanceOf[IllegalStateException], s"got $err")
+  }
+
+  test("ParallelF32: results are bit-identical to single-threaded for any number of tasks") {
+    val rnd = new Random(21)
+    val pool = java.util.concurrent.Executors.newFixedThreadPool(6)
+    try
+      for (ta, tb) <- transposes; (m, n, k) <- Seq((8, 16, 16), (37, 45, 70), (130, 64, 48)) do
+        val (ar, ac) = phys(m, k, ta); val (br, bc) = phys(k, n, tb)
+        val a = randomMatrix(rnd, ar, ac); val b = randomMatrix(rnd, br, bc)
+        val ref = MatrixF32.zeros(m, n)
+        kernels.gemmInto(a, ta, b, tb, ref, new Workspace(k * n))
+        for tasks <- Seq(1, 2, 3, 6, 7, 40) do
+          val c = MatrixF32.wrap(Array.fill(m * n)(Float.NaN), m, n)
+          ParallelF32.gemmInto(kernels, pool, IndexedSeq.fill(tasks)(new Workspace(k * n)), a, ta, b, tb, c, 1f, 0f)
+          assertEquals(bitsOf(c), bitsOf(ref), s"$m x $n x $k $ta$tb tasks=$tasks")
+      assertEquals(ParallelF32.rowBounds(10, 3).toSeq, Seq(0, 4, 8, 10))
+      assertEquals(ParallelF32.rowBounds(3, 4).toSeq, Seq(0, 0, 0, 0, 3))
+    finally pool.shutdown()
+  }
+
+  test("ParallelF32: argument, workspace and executor problems surface before or after all tasks, never mid-way") {
+    val pool = java.util.concurrent.Executors.newFixedThreadPool(2)
+    try
+      val a = MatrixF32.zeros(16, 8); val b = MatrixF32.zeros(8, 4)
+      val c = MatrixF32.wrap(Array.fill(64)(5f), 16, 4)
+      val ws = new Workspace()
+      intercept[IllegalArgumentException](ParallelF32.gemmInto(kernels, pool, IndexedSeq(ws, ws), a, T.No, b, T.No, c, 1f, 0f))
+      intercept[IllegalArgumentException](ParallelF32.gemmInto(kernels, pool, IndexedSeq.empty, a, T.No, b, T.No, c, 1f, 0f))
+      intercept[IllegalArgumentException](ParallelF32.gemmInto(kernels, pool, IndexedSeq(ws), a, T.No, MatrixF32.zeros(4, 4), T.No, c, 1f, 0f))
+      // TT needs k * n floats in every workspace: checked for all tasks first
+      intercept[IllegalStateException](
+        ParallelF32.gemmInto(kernels, pool, IndexedSeq(new Workspace(32), new Workspace(0)), MatrixF32.zeros(8, 16), T.Yes, MatrixF32.zeros(4, 8), T.Yes, c, 1f, 0f)
+      )
+      assert(c.toArray.forall(_ == 5f))
+      // a rejected submission is reported after the tasks already running have finished
+      val closed = java.util.concurrent.Executors.newSingleThreadExecutor()
+      closed.shutdown()
+      intercept[java.util.concurrent.RejectedExecutionException](
+        ParallelF32.gemmInto(kernels, closed, IndexedSeq(new Workspace(), new Workspace()), a, T.No, b, T.No, c, 1f, 0f)
+      )
+    finally pool.shutdown()
   }
 
   // ------------------------------------------------------------------ K2 rows

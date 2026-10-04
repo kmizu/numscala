@@ -67,7 +67,7 @@ object NDArrayF32Adapter:
     val packB = if lb == Packed then Math.multiplyExact(k, n) else 0
     val need = packA.toLong + packB + kernels.gemmWorkspaceFloats(m, n, k, tA, tB)
     if need > Int.MaxValue then throw new IllegalArgumentException("matmul: workspace would be too large")
-    ws.checkThread()
+    ws.enter()
     val mk = ws.mark
     try
       ws.reserveFloats(((mk >>> 32) + need).toInt)
@@ -98,7 +98,9 @@ object NDArrayF32Adapter:
           idx(ax) = 0
           ax -= 1
         t += 1
-    finally ws.release(mk)
+    finally
+      ws.release(mk)
+      ws.exit()
     out
 
   /** Copies an arbitrary-stride `rows x cols` view into the workspace at `dstOff` (row-major). */
