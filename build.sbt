@@ -36,8 +36,9 @@ lazy val root = (project in file("."))
   )
 
 // ---------------------------------------------------------------------------------------------
-// Optional modules (NS-CPU-001). The root project above does NOT aggregate them, so `sbt test`,
-// `publishLocal` and the release only build/publish the `numscala` artifact on JDK 17+.
+// Optional modules (NS-CPU-001). The root project above does NOT aggregate them, so `sbt test` and
+// `publishLocal` only build the `numscala` artifact on JDK 17+. The release publishes `numscala` and,
+// explicitly, `numscala-vector25` (JDK 25; see .github/workflows/release.yml).
 
 val vectorModuleOpts = Seq("--add-modules=jdk.incubator.vector")
 
@@ -57,7 +58,7 @@ lazy val vector25 = (project in file("vector25"))
     run / fork := true,
     run / javaOptions ++= vectorModuleOpts,
     Test / publishArtifact := false,
-    publish / skip := true // artifact name/version are decided at release time (design §10)
+    pomIncludeRepository := { _ => false }
   )
 
 /** JMH benchmarks for the CPU kernels (never published). */
