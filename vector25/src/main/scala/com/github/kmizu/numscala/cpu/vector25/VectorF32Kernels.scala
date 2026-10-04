@@ -22,17 +22,24 @@ class VectorF32Kernels(val smallGemm: Long) extends ScalarF32Kernels:
 
   private inline def small(m: Int, n: Int, k: Int): Boolean = m.toLong * n * k < smallGemm
 
-  /** Sum of the lanes in lane order 0, 1, ..., L-1.
+  /** Sum of the lanes in lane order 0, 1, ..., L-1, via `tmp` (length `L`, scratch owned by the caller).
     *
     * `reduceLanes(ADD)` leaves the float addition order unspecified, and the interpreter and the C2
-    * intrinsic do differ, so results would change once a method gets JIT-compiled. Lane extraction and
-    * lanewise `fma` are exact, so this keeps each backend/shape run-to-run reproducible.
+    * intrinsic do differ, so results would change once a method gets JIT-compiled. `lane(i)` with a
+    * non-constant `i` is not reliably intrinsified (whether C2 fully unrolls the loop first varies run to
+    * run, and when it does not every vector gets boxed: measured 57x slower). `intoArray` is always
+    * intrinsified, and the scalar adds then run in a fixed order.
+    *
+    * Deliberately not `inline`: a Scala-inlined `while` loop inside an expression such as
+    * `cd(i) += alpha * sumLanes(...)` runs with a non-empty operand stack. HotSpot cannot OSR-compile such a
+    * loop, and its fallback can leave the whole kernel on C1 (no Vector API intrinsics, ~60x slower).
     */
-  private inline def sumLanes(v: FloatVector): Float =
-    var s = v.lane(0)
+  private def sumLanes(v: FloatVector, tmp: Array[Float]): Float =
+    v.intoArray(tmp, 0)
+    var s = tmp(0)
     var l = 1
     while l < L do
-      s += v.lane(l)
+      s += tmp(l)
       l += 1
     s
 
@@ -161,13 +168,14 @@ class VectorF32Kernels(val smallGemm: Long) extends ScalarF32Kernels:
     * in a fixed order. Every element of C sees the same operation sequence whichever block computes it.
     */
   private def nt(a: MatrixF32, b: MatrixF32, c: MatrixF32, m: Int, n: Int, k: Int, alpha: Float): Unit =
+    val tmp = new Array[Float](L)
     var i = 0
     while i + 1 < m do
-      ntRows2(a, b, c, i, n, k, alpha)
+      ntRows2(a, b, c, i, n, k, alpha, tmp)
       i += 2
-    if i < m then ntRow1(a, b, c, i, n, k, alpha)
+    if i < m then ntRow1(a, b, c, i, n, k, alpha, tmp)
 
-  private def ntRows2(a: MatrixF32, b: MatrixF32, c: MatrixF32, i: Int, n: Int, k: Int, alpha: Float): Unit =
+  private def ntRows2(a: MatrixF32, b: MatrixF32, c: MatrixF32, i: Int, n: Int, k: Int, alpha: Float, tmp: Array[Float]): Unit =
     val ad = a.data; val bd = b.data; val cd = c.data
     val kb = S.loopBound(k)
     val tail = S.indexInRange(kb, k)
@@ -201,21 +209,21 @@ class VectorF32Kernels(val smallGemm: Long) extends ScalarF32Kernels:
         val y3 = FloatVector.fromArray(S, bd, b3 + kb, tail)
         s00 = x0.fma(y0, s00); s01 = x0.fma(y1, s01); s02 = x0.fma(y2, s02); s03 = x0.fma(y3, s03)
         s10 = x1.fma(y0, s10); s11 = x1.fma(y1, s11); s12 = x1.fma(y2, s12); s13 = x1.fma(y3, s13)
-      cd(cr0 + j) += alpha * sumLanes(s00)
-      cd(cr0 + j + 1) += alpha * sumLanes(s01)
-      cd(cr0 + j + 2) += alpha * sumLanes(s02)
-      cd(cr0 + j + 3) += alpha * sumLanes(s03)
-      cd(cr1 + j) += alpha * sumLanes(s10)
-      cd(cr1 + j + 1) += alpha * sumLanes(s11)
-      cd(cr1 + j + 2) += alpha * sumLanes(s12)
-      cd(cr1 + j + 3) += alpha * sumLanes(s13)
+      cd(cr0 + j) += alpha * sumLanes(s00, tmp)
+      cd(cr0 + j + 1) += alpha * sumLanes(s01, tmp)
+      cd(cr0 + j + 2) += alpha * sumLanes(s02, tmp)
+      cd(cr0 + j + 3) += alpha * sumLanes(s03, tmp)
+      cd(cr1 + j) += alpha * sumLanes(s10, tmp)
+      cd(cr1 + j + 1) += alpha * sumLanes(s11, tmp)
+      cd(cr1 + j + 2) += alpha * sumLanes(s12, tmp)
+      cd(cr1 + j + 3) += alpha * sumLanes(s13, tmp)
       j += 4
     while j < n do
-      cd(cr0 + j) += alpha * dot(ad, ar0, bd, b.offset + j * b.rowStride, k, kb, tail)
-      cd(cr1 + j) += alpha * dot(ad, ar1, bd, b.offset + j * b.rowStride, k, kb, tail)
+      cd(cr0 + j) += alpha * dot(ad, ar0, bd, b.offset + j * b.rowStride, k, kb, tail, tmp)
+      cd(cr1 + j) += alpha * dot(ad, ar1, bd, b.offset + j * b.rowStride, k, kb, tail, tmp)
       j += 1
 
-  private def ntRow1(a: MatrixF32, b: MatrixF32, c: MatrixF32, i: Int, n: Int, k: Int, alpha: Float): Unit =
+  private def ntRow1(a: MatrixF32, b: MatrixF32, c: MatrixF32, i: Int, n: Int, k: Int, alpha: Float, tmp: Array[Float]): Unit =
     val ad = a.data; val bd = b.data; val cd = c.data
     val kb = S.loopBound(k)
     val tail = S.indexInRange(kb, k)
@@ -223,18 +231,18 @@ class VectorF32Kernels(val smallGemm: Long) extends ScalarF32Kernels:
     val cr = c.offset + i * c.rowStride
     var j = 0
     while j < n do
-      cd(cr + j) += alpha * dot(ad, ar, bd, b.offset + j * b.rowStride, k, kb, tail)
+      cd(cr + j) += alpha * dot(ad, ar, bd, b.offset + j * b.rowStride, k, kb, tail, tmp)
       j += 1
 
   /** Lane-wise FMA dot product with the fixed-order lane sum (the per-element recipe of the NT kernel). */
-  private def dot(ad: Array[Float], ao: Int, bd: Array[Float], bo: Int, k: Int, kb: Int, tail: VectorMask[java.lang.Float]): Float =
+  private def dot(ad: Array[Float], ao: Int, bd: Array[Float], bo: Int, k: Int, kb: Int, tail: VectorMask[java.lang.Float], tmp: Array[Float]): Float =
     var s0 = FloatVector.zero(S)
     var p = 0
     while p < kb do
       s0 = FloatVector.fromArray(S, ad, ao + p).fma(FloatVector.fromArray(S, bd, bo + p), s0)
       p += L
     if kb < k then s0 = FloatVector.fromArray(S, ad, ao + kb, tail).fma(FloatVector.fromArray(S, bd, bo + kb, tail), s0)
-    sumLanes(s0)
+    sumLanes(s0, tmp)
 
   // ------------------------------------------------------------------ exp-based kernels
 
@@ -325,6 +333,7 @@ class VectorF32Kernels(val smallGemm: Long) extends ScalarF32Kernels:
   override protected def rowLogSumExpImpl(x: MatrixF32, out: Array[Float], outOffset: Int): Unit =
     val d = x.cols
     val bound = S.loopBound(d)
+    val tmp = new Array[Float](L)
     var i = 0
     while i < x.rows do
       val xi = x.offset + i * x.rowStride
@@ -334,28 +343,30 @@ class VectorF32Kernels(val smallGemm: Long) extends ScalarF32Kernels:
       while j < bound do
         mv = mv.max(FloatVector.fromArray(S, x.data, xi + j))
         j += L
-      var mx = mv.lane(0)
+      mv.intoArray(tmp, 0)
+      var mx = tmp(0)
       var l = 1
       while l < L do
-        mx = Math.max(mx, mv.lane(l))
+        mx = Math.max(mx, tmp(l))
         l += 1
       while j < d do
         mx = Math.max(mx, x.data(xi + j))
         j += 1
-      out(outOffset + i) =
-        if mx.isNaN || mx.isInfinite then mx // NaN row, +inf present, or all -inf / empty
-        else
-          val mxv = FloatVector.broadcast(S, mx)
-          var sv = FloatVector.zero(S)
-          j = 0
-          while j < bound do
-            sv = sv.add(expV(FloatVector.fromArray(S, x.data, xi + j).sub(mxv)))
-            j += L
-          var sum = sumLanes(sv)
-          while j < d do
-            sum += expScalar(x.data(xi + j) - mx)
-            j += 1
-          (mx + StrictMath.log(sum.toDouble)).toFloat // fdlibm: deterministic by specification
+      // computed into a local first: loops inside `out(..) = <expr>` would run with a non-empty operand stack
+      var res = mx // NaN row, +inf present, or all -inf / empty
+      if !(mx.isNaN || mx.isInfinite) then
+        val mxv = FloatVector.broadcast(S, mx)
+        var sv = FloatVector.zero(S)
+        j = 0
+        while j < bound do
+          sv = sv.add(expV(FloatVector.fromArray(S, x.data, xi + j).sub(mxv)))
+          j += L
+        var sum = sumLanes(sv, tmp)
+        while j < d do
+          sum += expScalar(x.data(xi + j) - mx)
+          j += 1
+        res = (mx + StrictMath.log(sum.toDouble)).toFloat // fdlibm: deterministic by specification
+      out(outOffset + i) = res
       i += 1
 
   // ------------------------------------------------------------------ rows / elementwise / scan
@@ -411,6 +422,7 @@ class VectorF32Kernels(val smallGemm: Long) extends ScalarF32Kernels:
 
   override protected def rowSumSquaresImpl(x: MatrixF32, out: Array[Float], outOffset: Int): Unit =
     val bound = S.loopBound(x.cols)
+    val tmp = new Array[Float](L)
     var i = 0
     while i < x.rows do
       val xi = x.offset + i * x.rowStride
@@ -420,7 +432,7 @@ class VectorF32Kernels(val smallGemm: Long) extends ScalarF32Kernels:
         val v = FloatVector.fromArray(S, x.data, xi + j)
         acc = v.fma(v, acc)
         j += L
-      var s = sumLanes(acc)
+      var s = sumLanes(acc, tmp)
       while j < x.cols do
         val v = x.data(xi + j)
         s = Math.fma(v, v, s)
