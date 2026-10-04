@@ -50,21 +50,27 @@ checkpoints. For example `scatterAddRowsInto` exists, but whether a row then get
 * **Workspaces.** Not thread-safe: one per worker. Capacity grows only through `reserveFloats` /
   `reserveLongs`, never silently in a hot loop. Use `gemmWorkspaceFloats` / `coalesceWorkspaceLongs`
   to size it. `reset()` does not zero anything. Nothing a kernel borrows survives the call.
-  `new Workspace(debug = true)` throws when a second thread uses it.
+  `new Workspace(debug = true)` throws when a thread uses a workspace while another thread's kernel
+  call holds it. Handing a workspace to another thread between calls (thread pools) is fine.
 * **Threads.** Kernels are single-threaded and never create pools; callers split work across their
-  own workers.
+  own workers. `gemmRowsInto(..., rowFrom, rowUntil, ws)` computes a row slice of C with exactly the
+  bits the whole `gemmInto` would give those rows. `ParallelF32.gemmInto(kernels, executor, workspaces, ...)`
+  uses that to split C's rows over a caller-owned `ExecutorService`, one workspace per task. The result
+  is bit-identical for any number of tasks, so training can be independent of the worker count.
 * **Numerics.** Computation is Float32. The scalar backend's row reductions accumulate in Double.
   Backends may differ in rounding (FMA, summation order); bit equality between backends is not promised.
   The tests use the componentwise bound `1e-6 + 4 γ(2K+4) (|alpha| Σ|a b| + |beta c|)`.
   `rowLogSumExpInto` returns NaN for a row with NaN, `+inf` for a row containing `+inf`, and `-inf` for
   all-`-inf` or empty rows. `silu(-inf) = -0`.
+* **Reproducibility.** For a fixed backend instance and shape, every kernel gives the same bits run to
+  run, across JIT tiers and across threads.
 
 ## Backends
 
 | Backend | Where | Requirements |
 |---|---|---|
 | `scalar` | `numscala` (root artifact) | JDK 17+ |
-| `vector25` | `vector25/` module (`numscala-vector25`, not yet published) | JDK 25 started with `--add-modules=jdk.incubator.vector` |
+| `vector25` | `"com.github.kmizu" %% "numscala-vector25" % version` (since 0.4.0) | JDK 25 started with `--add-modules=jdk.incubator.vector` |
 
 `F32Backend.select("scalar" | "vector25" | "auto")` returns a `BackendSelection` with the reason for the
 choice. Asking for `vector25` when it cannot load throws with that reason. Only `auto` falls back to
@@ -73,9 +79,13 @@ once from the system property `numscala.cpu.backend` (default `scalar`) and is w
 for float32. `KernelDiagnostics.report(selection, workspace)` gives one line for logs and benchmark records.
 
 The vector backend uses `FloatVector.SPECIES_PREFERRED` (8 lanes on AVX2) with FMA. GEMM uses a 4x2
-register-blocked micro-kernel for NN/TN/TT and a 1x4 dot-product block for NT. Every lane reduction sums in a fixed order (never `reduceLanes`), so a given backend instance and shape give bit-identical results run to run and across JIT tiers. GEMMs with
-`m*n*k < 2048` stay on the scalar loops; the threshold is fixed per instance
-(`new VectorF32Kernels(threshold)`).
+register-blocked micro-kernel for NN/TN/TT and a 2x4 dot-product block for NT. Every lane reduction
+sums in a fixed order (never `reduceLanes`). sigmoid, SiLU and log-sum-exp use a vectorised Float32
+`exp` built only from exactly specified lanewise operations (Cephes-style reduction and polynomial,
+about 2 ulp). sigmoid/SiLU are within 5e-7 relative of the Double reference while `sigmoid(x)` is a
+normal float (x > about -87); below that the subnormal intermediate costs SiLU relative precision.
+GEMMs whose whole product has `m*n*k < 2048` stay on the scalar loops; the threshold is fixed per
+instance (`new VectorF32Kernels(threshold)`), and row slices use the whole product's choice.
 
 ## Building and running
 
