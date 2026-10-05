@@ -17,14 +17,14 @@ open class ScalarF32Kernels protected () extends F32Kernels:
 
   protected def gemmImpl(
       a: MatrixF32, transA: Transpose, b: MatrixF32, transB: Transpose, c: MatrixF32,
-      m: Int, n: Int, k: Int, alpha: Float, beta: Float, readsAB: Boolean, ws: Workspace, dispatchM: Int
+      m: Int, n: Int, k: Int, alpha: Float, beta: Float, readsAB: Boolean, ws: Workspace, dispatchM: Int, dispatchN: Int
   ): Unit =
     scaleC(c, m, n, beta)
     if readsAB then
-      if useScalarGemm(dispatchM, n, k) then scalarGemm(a, transA, b, transB, c, m, n, k, alpha, ws)
+      if useScalarGemm(dispatchM, dispatchN, k) then scalarGemm(a, transA, b, transB, c, m, n, k, alpha, ws)
       else fastGemm(a, transA, b, transB, c, m, n, k, alpha, ws)
 
-  /** Whether a product of logical shape `(m x k) * (k x n)` (the whole product, not a row slice) uses the scalar loops. */
+  /** Whether a product of logical shape `(m x k) * (k x n)` (the whole product, not a tile) uses the scalar loops. */
   protected def useScalarGemm(m: Int, n: Int, k: Int): Boolean = true
 
   /** The backend's own GEMM for products where [[useScalarGemm]] is false (C already scaled by beta). */
